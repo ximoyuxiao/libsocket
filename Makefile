@@ -2,7 +2,15 @@ CC=g++
 SOKCETOBJ=src/baseio.o\
 src/socket.o\
 src/tcpsocket.o\
-src/epool.o
+src/epoll.o\
+http/util.o\
+http/http.o\
+http/httpcoon.o\
+http/httpengine.o\
+Tpool/cond.o\
+Tpool/locker.o\
+Tpool/sem.o\
+Tpool/threadpool.o
 CXXFLAGS = -fPIC -I./include -std=c++11 -g
 LDFLAGS=-L. -lsocket -pthread  -Wl,--rpath=./
 all:libsocket.a libsocket.so
@@ -24,11 +32,11 @@ server:example/server.o
 client:example/client.o
 	${CC}  $^ -o $@ ${LDFLAGS}
 
-httpserver:http/httpserver.o
+httpserver:example/httpserver.o
 	${CC} $^ -o $@ ${LDFLAGS}
 
 .PHONY : clean clean-test
 clean:
-	rm src/*.o libsocket.*
+	rm src/*.o libsocket.* http/*.o Tpool/*.o
 clean-test:
 	rm example/*.o server client httpserver

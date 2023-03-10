@@ -1,6 +1,9 @@
 #include<httpengine.h>
-#include<epool.h>
+#include<epoll.h>
 #include<vector>
+#include<util.h>
+#include<worker.h>
+#include<threadpool.h>
 using namespace my;
 
 EngineRouter::EngineRouter(string url):prefix_url(url),reg_router(nullptr){
@@ -75,7 +78,8 @@ std::string EngineRouter::FixRouter(std::string router){
 bool EngineRouter::Register(HttpMethod_t method,std::string router,CallBackFunc func){
     if(router.size() <= 0) return false;
     router = FixRouter(router);
-    auto routers = SpliteRouter(router);
+    vector<string> routers;
+    SplitString(router,"/",routers);
     auto curr = this;
     for(auto router:routers){
         EngineRouter* next_router = nullptr;
@@ -93,7 +97,7 @@ bool EngineRouter::Register(HttpMethod_t method,std::string router,CallBackFunc 
         if(!next_router){
             next_router = CreateRouter(router);
         }
-        auto next_router = curr->routers[router];
+        next_router = curr->routers[router];
     }
     if(curr == nullptr){
         return false;
@@ -104,12 +108,16 @@ bool EngineRouter::Register(HttpMethod_t method,std::string router,CallBackFunc 
     }
     curr->method_handler[method] = func;
 }
-
+vector<std::string> EngineRouter::SpliteRouter(std::string router){
+    vector<std::string> ret;
+    SplitString(router,"/",ret);
+    return ret;
+}
 /*
 return: /url/xxx/
 */
 std::string EngineRouter::VisiteURL(vector<CallBackFunc>& handlers,std::string router,HttpMethod_t method){
-    if(router.size() <= 0) return ;
+    if(router.size() <= 0) return "";
     bool noRouter = false;
     string path = this->prefix_url;
     EngineRouter* curr = this;
@@ -145,45 +153,61 @@ int EngineRouter::StaticFile(std::string router,std::string path){
     return 0;
 }
 
-
-
-class ClientFunc:public HandleEventOBJ{
-    Epool* ep;
+class ClientFunc:public HandleEventOBJ,public worker{
+    Epoll* ep;
     HttpEngine* server;
+    HttpConn* conn;
 public:
-    ClientFunc(Epool* ep,HttpEngine* server):ep(ep),server(server){}
+    ClientFunc(Epoll* ep,HttpEngine* server):ep(ep),server(server){}
+    void run(){
+        auto ret = conn->ReadToRequest();
+        if(ret != GET_REQUEST){
+            server->HandlerErrorResult(conn,ret);
+            return ;
+        }
+        vector<CallBackFunc> handlers;
+        conn->Router(server->VisiteURL(handlers,conn->URL(),conn->Method()));
+        // 404 的情况
+        if(conn->Router() == ""){
+            if(server->NoRouterFunc) server->NoRouterFunc(conn);  
+        }
+        ret = conn->ParseParam();
+        if(ret != GET_REQUEST){
+            server->HandlerErrorResult(conn,ret);
+            return ;
+        }
+        // 正常情况 先调用钩子函数 最后调用处理函数
+        for(auto handler:handlers){
+            handler(conn);
+        }
+        ep->ModifyEvent(conn,EPOLLOUT|EPOLLRDHUP|EPOLLET|EPOLLONESHOT);
+        return ;
+    }
+    
     void handle(epoll_event event){
+        conn = server->conn[event.data.fd];
+        if(!conn) return;
         if(event.events & EPOLLIN){
-            auto conn = server->conn[event.data.fd];
-            if(!conn) return;
-            int ret = conn->ReadToRequest();
-            if(ret < 0){
-                perror("ReadString");
-                return ;
-            }
+            auto tpool = threadpool::getPool();
+            tpool->excute(std::shared_ptr<worker>(this));
+        }
+
+        if(event.events & (EPOLLRDHUP|EPOLLHUP|EPOLLERR)){
+            ep->DelEvent(conn);
+            conn->ShutDown(SHUT_RDWR);
+            conn->Close();
+            return ;
+        }
+       
+        if(event.events & EPOLLOUT){
+            int ret = conn->Write();
             if(!ret){
                 ep->DelEvent(conn);
                 conn->ShutDown(SHUT_RDWR);
                 conn->Close();
                 return ;
             }
-            vector<CallBackFunc> handlers;
-            conn->URL = server->VisiteURL(handlers,conn->Router(),conn->Method());
-            // 404 的情况
-            if(conn->URL == ""){
-                if(server->NoRouterFunc) server->NoRouterFunc(conn);  
-            }
-            // 正常情况 先调用钩子函数 最后调用处理函数
-            for(auto handler:handlers){
-                handler(conn);
-            }
             ep->ModifyEvent(conn,EPOLLIN|EPOLLRDHUP|EPOLLET|EPOLLONESHOT);
-        }
-        if(event.events & (EPOLLRDHUP)){
-            auto conn = server->conn[event.data.fd];
-            ep->DelEvent(conn);
-            conn->ShutDown(SHUT_RDWR);
-            conn->Close();
             return ;
         }
         return ;
@@ -191,10 +215,10 @@ public:
 };
 
 class ServerFunc:public HandleEventOBJ{
-    Epool* ep;
+    Epoll* ep;
     HttpEngine* server;
     public:
-        ServerFunc(Epool* ep,HttpEngine* server):ep(ep),server(server){}
+        ServerFunc(Epoll* ep,HttpEngine* server):ep(ep),server(server){}
     public:
         void handle(epoll_event event){
             auto socket = server->Accept();
@@ -210,15 +234,17 @@ class ServerFunc:public HandleEventOBJ{
 };
 
 
-
-
 HttpEngine::HttpEngine(int port,int max_conn):TCPServer("0.0.0.0",port),\
 NoRouterFunc(nullptr),_mode(HttpMode::M_Default),max_conn(max_conn),current_conn(0),live(true),\
 EngineRouter("/"){}
 
 
 HttpEngine::~HttpEngine(){
-   EngineRouter::~EngineRouter();
+   for(auto router:routers){
+        delete router.second;
+    }
+    if(reg_router)
+        delete reg_router;
     for(auto con:conn){
         con.second->ShutDown(SHUT_RDWR);
         con.second->Close();
@@ -241,7 +267,7 @@ void HttpEngine::Run(){
         perror("Listen failed");
         return ;
     }
-    my::Epool ep;
+    my::Epoll ep;
     ep.EventInit();
     auto func = shared_ptr<HandleEventOBJ>(new ServerFunc(&ep,this));
     ep.AddEvenet(this,EPOLLIN|EPOLLET,func);
@@ -249,8 +275,48 @@ void HttpEngine::Run(){
 }
 
 void HttpEngine::AddConn(TCPSocket socket){
-
+    HttpConn *con = new HttpConn(socket);
+    int reuse = 1;
+    setsockopt(socket.FD(), SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof( reuse ) );
+    this->max_conn++;
+    conn[socket.FD()] = con; 
+    con->InitConn();
 }
+
+int HttpEngine::GetAllRouter(vector<RouterNode>& routerList){
+    EngineRouter* router = (EngineRouter*)this;
+    string url = this->prefix_url;
+    return VisiteAllRouter(router,url,routerList);
+}
+
+void HttpEngine::HandlerErrorResult(HttpConn* client,HTTP_RESULT_t result,CallBackFunc func){
+    if(result == GET_REQUEST) return ;
+    if(func) func(client);
+    if(result == BAD_REQUEST){
+        client->WriteToJson(HttpStatus::StatusBadRequest,"{\n\
+            \"code\":401,\n\
+            \"msg\":\"BAD REQUEST\"\n\
+            }");
+        return ;
+    }
+    if(result == NO_REQUEST){
+          ep->ModifyEvent(client,EPOLLIN|EPOLLRDHUP|EPOLLET|EPOLLONESHOT);
+          return ;
+    }
+    if(result == CLOSED_CONNECTION){
+        ep->DelEvent(client);
+        client->Close();
+        return ;
+    }
+    if(result == INTERNAL_ERROR){
+        client->WriteToJson(HttpStatus::StatusInternalServerError,"{\n\
+    \"code\":505,\n\
+    \"msg\":\"SERVER INTERNAL ERROR\"\n\
+}");
+        return ;
+    }
+}
+
 
 int HttpEngine::VisiteAllRouter(EngineRouter* curr,string url,vector<RouterNode>& routerList){
     // 放入所有的叶子节点
@@ -272,10 +338,4 @@ int HttpEngine::VisiteAllRouter(EngineRouter* curr,string url,vector<RouterNode>
         VisiteAllRouter(router.second,newurl,routerList);
     }
     return 0;
-}
-
-int HttpEngine::GetAllRouter(vector<RouterNode>& routerList){
-    EngineRouter* router = (EngineRouter*)this;
-    string url = this->prefix_url;
-    return VisiteAllRouter(router,url,routerList);
 }

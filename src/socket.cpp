@@ -31,7 +31,7 @@ int my::BaseSocket::ReadBytes(byte_t *buff,size_t size){
         while(len < size){
             int ret = read(fd,buff + len,size - len);
             if(ret < 0){
-                if(errno == EAGAIN){
+                if(errno == EAGAIN || errno == EWOULDBLOCK){
                     return len;
                 }
                 if(errno == EINTR){

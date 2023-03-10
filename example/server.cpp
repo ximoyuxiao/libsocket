@@ -6,21 +6,21 @@
 #include <cstring>
 #include"socket.h"
 #include "tcpsocket.h"
-#include "epool.h"
+#include "epoll.h"
 using namespace my;
 #define PORT "4212"
 #define SERVER "0.0.0.0"
 #define BUFSIZE 1024
 struct serverarg{
     TCPServer server;
-    Epool ep;
+    Epoll ep;
 };
 
 class ClientFunc:public HandleEventOBJ{
-    Epool* ep;
+    Epoll* ep;
     my::TCPSocket socket;
 public:
-    ClientFunc(Epool* ep,my::TCPSocket socket):ep(ep),socket(socket){}
+    ClientFunc(Epoll* ep,my::TCPSocket socket):ep(ep),socket(socket){}
     void handle(epoll_event event){
         if(event.events & EPOLLIN){
             char buf[BUFSIZ];
@@ -51,10 +51,10 @@ public:
 };
 
 class ServerFunc:public HandleEventOBJ{
-    Epool* ep;
+    Epoll* ep;
     my::TCPServer* server;
     public:
-        ServerFunc(Epool* ep,my::TCPServer* server):ep(ep),server(server){}
+        ServerFunc(Epoll* ep,my::TCPServer* server):ep(ep),server(server){}
     public:
         void handle(epoll_event event){
             struct sockaddr_in raddr;
@@ -71,7 +71,7 @@ int main(){
         perror("Listen:");
         exit(1);
     }
-    my::Epool ep;
+    my::Epoll ep;
     ep.EventInit();
     auto func = shared_ptr<HandleEventOBJ>(new ServerFunc(&ep,&server));
     ep.AddEvenet(&server,EPOLLIN|EPOLLET,func);

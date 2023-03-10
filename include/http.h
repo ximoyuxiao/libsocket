@@ -1,23 +1,26 @@
 #ifndef HTTP_H__
 #define HTTP_H__
+#include<unordered_map>
+namespace my{
 typedef int HttpStatus_t;
 typedef int HttpMode_t;
-typedef char* HttpMethod_t;
+typedef std::string HttpMethod_t;
 enum HTTP_CHECK_STATE_t{
     CHECK_STATE_REQUESTLINE = 0, CHECK_STATE_HEADER, CHECK_STATE_CONTENT
 };
 enum HTTP_LINE_STATUS_t{
-     LINE_OK = 0, LINE_BAD, LINE_OPEN 
+    LINE_OK = 0, LINE_BAD, LINE_OPEN 
 };
 /*
-        服务器处理HTTP请求的可能结果，报文解析的结果
-        NO_REQUEST          :   请求不完整，需要继续读取客户数据
-        GET_REQUEST         :   表示获得了一个完成的客户请求
-        BAD_REQUEST         :   表示客户请求语法错误
-        CLOSED_CONNECTION   :   表示客户端已经关闭连接了
-    */
+    服务器处理HTTP请求的可能结果，报文解析的结果
+    NO_REQUEST          :   请求不完整，需要继续读取客户数据
+    GET_REQUEST         :   表示获得了一个完成的客户请求
+    BAD_REQUEST         :   表示客户请求语法错误
+    CLOSED_CONNECTION   :   表示客户端已经关闭连接了
+    INTERNAL_ERROR      :   服务器内部错误
+*/
 enum HTTP_RESULT_t{
-    NO_REQUEST, GET_REQUEST, BAD_REQUEST, CLOSED_CONNECTION
+    NO_REQUEST, GET_REQUEST, BAD_REQUEST, CLOSED_CONNECTION,INTERNAL_ERROR
 };
 
 class HttpStatus{
@@ -46,6 +49,7 @@ public:
     static const int StatusNotModified = 304;
     static const int StatusTemporaryRedirect = 307;
     static const int StatusPermanentRedirect = 308;
+
     static const int StatusBadRequest = 400;
     static const int StatusUnauthorized = 401;
     static const int StatusPaymentRequired = 402;
@@ -120,15 +124,6 @@ public:
     static const HttpMethod_t TRACE;
 #endif
 };
-#endif
-#if  __cplusplus < 201703L
-const HttpMethod_t HttpMethod::CONNECT = "CONNECT";
-const HttpMethod_t HttpMethod::DELETE  = "DELETE";
-const HttpMethod_t HttpMethod::GET = "GET";
-const HttpMethod_t HttpMethod::HEAD = "HEAD";
-const HttpMethod_t HttpMethod::OPTIONS = "OPTIONS";
-const HttpMethod_t HttpMethod::PATCH = "PATCH";
-const HttpMethod_t HttpMethod::POST = "POST";
-const HttpMethod_t HttpMethod::PUT = "PUT";
-const HttpMethod_t HttpMethod::TRACE = "TRACE";
+extern std::unordered_map<std::string,HttpMethod_t> methods;
+};
 #endif

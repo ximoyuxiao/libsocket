@@ -81,6 +81,9 @@ threadpool* threadpool::getPool(int core,int max_core,long livetime,size_t listl
 }
 threadpool* threadpool::getPool()
 {
+    if(mythredpool == nullptr){
+        mythredpool = new threadpool(2,10,30,50,nullptr);
+    }
     return mythredpool;
 }
 bool threadpool::cancleThread(threadInfo_ptr thread)

@@ -1,5 +1,5 @@
-#ifndef EPOOL_H__
-#define EPOOL_H__
+#ifndef EPOLL_H__
+#define EPOLL_H__
 #include<unordered_map>
 #include<sys/epoll.h>
 #include "socktype.h"
@@ -12,17 +12,17 @@ class HandleEventOBJ{
         virtual void handle(epoll_event event) = 0;
         virtual ~HandleEventOBJ();
 };
-typedef int epool_t; 
-class Epool{
+typedef int epoll_t; 
+class Epoll{
     std::unordered_map<int,shared_ptr<HandleEventOBJ>> handleMap;
-    epool_t epool;
+    epoll_t epoll;
     bool live;
     int conn;
     pthread_mutex_t connectlock;
     int max_conn;
     public:
-        Epool(int _max_conn = 1024);
-        virtual ~Epool();
+        Epoll(int _max_conn = 1024);
+        virtual ~Epoll();
     public:
         int EventInit();
         int AddEvenet(BaseSocket*,int,shared_ptr<HandleEventOBJ>);
