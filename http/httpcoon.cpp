@@ -3,12 +3,22 @@
 #include<cstring>
 #include<httpengine.h>
 using namespace my;
-HttpConn::HttpConn(TCPSocket socket):TCPSocket(socket){
+void PrintRequest(Request req);
+HttpConn::HttpConn(TCPSocket socket):TCPSocket(socket),max_read_size(1024){
 }
 HttpConn::~HttpConn(){
-
+    if(readbuf){
+        delete readbuf;
+    }
 }
-void HttpConn::InitConn(){}
+void HttpConn::InitConn(){
+    readbuf = new char[max_read_size];
+    read_idx = 0;
+    line_idx = 0;
+    line_start_idx = 0;
+    router = "";
+    ReSetRequest();
+}
 
 string HttpConn::URL(){
     return _request.URL;
@@ -35,24 +45,62 @@ void HttpConn::Router(string router){
 }
 
 int HttpConn::Write(){
-    return WriteBytes(writebuf.data(),writebuf.size());
+    // _response ---> 
+    cout<<"Write"<<endl;
+    auto respLine = _request.http_version + " " + to_string(_response.status) + " " + statusStr[_response.status] + "\r\n";
+    SetHeader("Content-Length",to_string(_response.ContentLength));
+    SetHeader("Content-Type",_response.ContentType);
+    if(_response.cookies.size()){
+        // 生成cookie
+        SetHeader("Set-Cookie","1=1");
+    }
+    // header
+    for(auto header:_response.headers){
+        respLine += header.first +": " + header.second + "\r\n";
+    }
+    if(_response.bodys){
+        respLine += "\r\n";
+        respLine += _response.bodys;
+    }
+    cout<<respLine<<endl;
+    int ret =  WriteString(respLine.c_str(),respLine.size());
+    if(ret == -1){
+        perror("WriteBytes");
+        return ret;
+    }
+    return ret;
 }
 
 int HttpConn::WriteToJson(HttpStatus_t code,string json){
+    auto len = json.size();
     _response.ContentType = "application/json";
     _response.status = code;
+    _response.ContentLength = json.size();
+    _response.bodys = new byte_t[len + 1]();
+    bzero(_response.bodys,len + 1);
+    memcpy(_response.bodys,json.c_str(),len + 1);
 }
 
 int HttpConn::WriteToXML(HttpStatus code,string json){
     
 }
 
-int HttpConn::WriteToText(HttpStatus_t code,string text){}
+int HttpConn::WriteToText(HttpStatus_t code,string text){
+    auto len = text.size();
+    _response.ContentType = "text/plain";
+    _response.status = code;
+    _response.ContentLength = text.size();
+    _response.bodys = new byte_t[len + 1]();
+    bzero(_response.bodys,len + 1);
+    memcpy(_response.bodys,text.c_str(),len + 1);
+    return 0;
+}
 
 int HttpConn::WriteToHTML(HttpStatus code,string json){}
 
 HTTP_RESULT_t HttpConn::ReadToRequest(){
     auto ret = ReadDataToBuff();
+    cout<<readbuf<<endl<<endl<<endl;
     if(ret != NO_REQUEST)
         return ret;
     ret = ParseRequest();
@@ -98,15 +146,14 @@ string HttpConn::GetParam(string key){
 int HttpConn::BindBody(void* body,string type){}
 
 HTTP_RESULT_t HttpConn::ReadDataToBuff(){
-    while(read_idx < max_read_size){
-        ssize_t len = ReadString(readbuf + read_idx,1024 - read_idx);
-        if(len < 0 ){
-            return INTERNAL_ERROR;
-        }
-        if(len == 0){
-            return CLOSED_CONNECTION;
-        }
+    ssize_t len = ReadString(readbuf + read_idx,1024 - read_idx);
+    if(len < 0){
+        return INTERNAL_ERROR;
     }
+    if(len == 0){
+        return CLOSED_CONNECTION;
+    }
+    read_idx += len;
     return NO_REQUEST;
 }
 
@@ -114,7 +161,7 @@ HTTP_RESULT_t HttpConn::ParseRequest(){
     line_status = LINE_OK;
     HTTP_RESULT_t ret = NO_REQUEST;
     while(((check_status == CHECK_STATE_CONTENT) && (line_status == LINE_OK)) 
-            ||(ret == NO_REQUEST && (line_status = ParseLine()) == LINE_OK)
+            ||((check_status != CHECK_STATE_CONTENT && ret == NO_REQUEST) && (line_status = ParseLine()) == LINE_OK)
         ){
         auto text = GetLine();
         line_start_idx = line_idx;
@@ -128,11 +175,12 @@ HTTP_RESULT_t HttpConn::ParseRequest(){
                 ret = ParseHeaderLine(text);
                 if(_request.ContentLength){
                     _request.bodys = new byte_t[_request.ContentLength + 1];
+                    bzero(_request.bodys,_request.ContentLength + 1);
                 }
                 break;
             }
             case CHECK_STATE_CONTENT:{
-                ret = ParseContentLine(readbuf + read_idx);
+                ret = ParseContentLine(readbuf + line_start_idx);
                 line_status = LINE_OPEN;
                 break;
             }
@@ -142,7 +190,6 @@ HTTP_RESULT_t HttpConn::ParseRequest(){
     }
     if(line_status==LINE_BAD) return BAD_REQUEST;
     return ret;
-    
 }
 
 HTTP_RESULT_t  HttpConn::ParseParam(){
@@ -159,7 +206,9 @@ HTTP_RESULT_t  HttpConn::ParseParam(){
             _request.param[key] = url_splite[i];
         }
     }
-    return NO_REQUEST;
+    auto req = _request;
+    PrintRequest(req);
+    return GET_REQUEST;
 }
 
 
@@ -256,11 +305,15 @@ HTTP_RESULT_t HttpConn::ParseHeaderLine(string text){
     }
     auto key = text.substr(0,idx); // len  长度为idx;
     auto value = text.substr(idx + 1,len - idx - 1);
+    if(value[0] == ' '){
+        value = value.substr(1,value.size() - 1);
+    }
     _request.headers[key] = value;
     if(key == "Connection" && value == "close"){
         _request.keepalive = false;
     }
     if(key == "Content-Type"){
+        
         _request.ContentType = value;
     }
     if(key == "Content-Length"){
@@ -273,12 +326,12 @@ HTTP_RESULT_t HttpConn::ParseHeaderLine(string text){
 }
 
 HTTP_RESULT_t HttpConn::ParseContentLine(const char* text){
-    if(read_idx >= _request.ContentLength + line_idx ){
+    if(read_idx >= _request.ContentLength + line_start_idx ){
         memcpy(_request.bodys,text,_request.ContentLength);
-        line_idx = _request.ContentLength + line_idx;
+        line_idx = _request.ContentLength + line_start_idx;
         return GET_REQUEST;
     } 
-    memcpy(_request.bodys,text,read_idx - line_idx);
+    memcpy(_request.bodys,text,read_idx - line_start_idx);
     return NO_REQUEST;
 }
 
@@ -298,11 +351,12 @@ void HttpConn::ParseCookie(string value){
 //服务端响应完毕之后才会做清理的动作
 void HttpConn::ReSetRequest(){
     //clear request
+    this->line_status = LINE_OPEN;
+    this->check_status = CHECK_STATE_REQUESTLINE;
     auto req = &_request;
     req->URL = "";
     req->method = "";
     req->param.clear();
-    req->http_version = "1.0";
     req->headers.clear();
     req->ContentLength = 0;
     req->ContentType ="";
@@ -313,7 +367,6 @@ void HttpConn::ReSetRequest(){
     }
      
     auto resp = &_response;
-    resp->http_version = "1.0";
     resp->status = 0;
     resp->headers.clear();
     resp->ContentLength = 0;
@@ -323,4 +376,28 @@ void HttpConn::ReSetRequest(){
         delete []resp->bodys;
         resp->bodys = nullptr;
     }
+}
+
+void HttpConn::RequestToWriteBuff(){
+
+}
+
+void PrintRequest(Request req){
+    cout<<"req:\n"<<req.method<<" "<<req.URL<<" "<<req.http_version<<endl;
+    cout<<"query\n";
+    for(auto query:req.query){
+        cout<<query.first<<" "<<query.second<<endl;
+    }
+    cout<<"param\n";
+    for(auto query:req.param){
+        cout<<query.first<<" "<<query.second<<endl;
+    }
+    cout<<"header:\n";
+    for(auto header:req.headers){
+        cout<<header.first<<" "<<header.second<<endl;
+    }
+    cout<<"body"<<endl;
+    cout<<req.bodys<<endl;
+    cout<<endl;
+    cout<<req.ContentLength<<endl<<req.ContentType<<endl;
 }

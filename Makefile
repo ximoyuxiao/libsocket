@@ -3,8 +3,8 @@ SOKCETOBJ=src/baseio.o\
 src/socket.o\
 src/tcpsocket.o\
 src/epoll.o\
-http/util.o\
 http/http.o\
+http/util.o\
 http/httpcoon.o\
 http/httpengine.o\
 Tpool/cond.o\

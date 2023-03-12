@@ -25,4 +25,17 @@ std::unordered_map<std::string,HttpMethod_t> methods{
     {"PUT",HttpMethod::PUT},
     {"TRACE",HttpMethod::TRACE},
 };
+std::unordered_map<int,std::string> statusStr{
+    {200,"OK"},
+    {400,"Bad Request"},
+    {403 , "Forbidden"},
+    {404 , "Not Found"},
+    {500 , "Internal Error"},
+};
+/*
+    { error_400_form , "Your request has bad syntax or is inherently impossible to satisfy.\n"},
+    { error_403_form , "You do not have permission to get file from this server.\n"},
+    { error_404_form , "The requested file was not found on this server.\n"},
+    { error_500_form , "There was an unusual problem serving the requested file.\n"},
+*/
 };

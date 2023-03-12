@@ -125,5 +125,6 @@ public:
 #endif
 };
 extern std::unordered_map<std::string,HttpMethod_t> methods;
+extern std::unordered_map<int,std::string> statusStr;
 };
 #endif

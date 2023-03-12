@@ -17,7 +17,7 @@ struct Request{
     HTTPQuery_t  query;
     HTTPParam_t  param;
     string http_version;
-    string keepalive;
+    bool keepalive;
     HTTPHeader_t headers;
     ssize_t ContentLength;
     string ContentType;
@@ -85,7 +85,7 @@ private:
     HTTP_RESULT_t ParseRequest();
 public:
     HTTP_RESULT_t ParseParam();
-   
+    void ReSetRequest();
 private:
     string GetLine();
     HTTP_LINE_STATUS_t ParseLine();
@@ -93,8 +93,7 @@ private:
     HTTP_RESULT_t ParseHeaderLine(string text);
     HTTP_RESULT_t ParseContentLine(const char* text);
     void ParseCookie(string value);
-    void ReSetRequest();
-
+    void RequestToWriteBuff();
 private:
 //下面这些不需要在实现 但是需要影藏
     // virtual int ReadBytes(byte_t *buff,size_t size);

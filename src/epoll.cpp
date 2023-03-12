@@ -33,7 +33,7 @@ int Epoll::ModifyEvent(const BaseSocket* socket,int event){
     epoll_event ep;
     ep.data.fd = socket->FD();;
     ep.events = event;
-    epoll_ctl(epoll,EPOLL_CTL_MOD,socket->FD(),&ep);
+    return epoll_ctl(epoll,EPOLL_CTL_MOD,socket->FD(),&ep);
 }
 int Epoll::DelEvent(const BaseSocket* socket){
     pthread_mutex_lock(&connectlock);
@@ -59,7 +59,9 @@ void Epoll::LoopWait(){
     while(live){
         int ret = epoll_wait(epoll,__events,conn,-1);
         for(int i = 0;i<ret;i++){
-            handleMap[__events[i].data.fd]->handle(__events[i]);
+            auto handle = handleMap[__events[i].data.fd];
+            if(handle)
+                handle->handle(__events[i]);
         }
     }
 }

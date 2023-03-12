@@ -97,9 +97,9 @@ bool EngineRouter::Register(HttpMethod_t method,std::string router,CallBackFunc 
         if(!next_router){
             next_router = CreateRouter(router);
         }
-        next_router = curr->routers[router];
+        curr = next_router;
     }
-    if(curr == nullptr){
+    if(!curr){
         return false;
     }
     if(curr->method_handler.count(method)){
@@ -108,6 +108,7 @@ bool EngineRouter::Register(HttpMethod_t method,std::string router,CallBackFunc 
     }
     curr->method_handler[method] = func;
 }
+
 vector<std::string> EngineRouter::SpliteRouter(std::string router){
     vector<std::string> ret;
     SplitString(router,"/",ret);
@@ -129,14 +130,16 @@ std::string EngineRouter::VisiteURL(vector<CallBackFunc>& handlers,std::string r
         }   
         if(curr->routers.count(router)){
             curr = curr->routers[router];
+            path +=  curr->prefix_url  + "/";
             continue;
         }
         if(curr->reg_router){
             curr = curr->reg_router;
+            path +=  curr->prefix_url  + "/";
             continue;
         }
         noRouter = true;
-        path +=  curr->prefix_url  + "/";
+        
     }
     if(!noRouter && curr->method_handler.count(method)){
         for(auto handler:curr->handlerList){
@@ -159,7 +162,7 @@ class ClientFunc:public HandleEventOBJ,public worker{
     HttpConn* conn;
 public:
     ClientFunc(Epoll* ep,HttpEngine* server):ep(ep),server(server){}
-    void run(){
+    void BuildResponse(){
         auto ret = conn->ReadToRequest();
         if(ret != GET_REQUEST){
             server->HandlerErrorResult(conn,ret);
@@ -170,17 +173,24 @@ public:
         // 404 的情况
         if(conn->Router() == ""){
             if(server->NoRouterFunc) server->NoRouterFunc(conn);  
+            return ;
         }
         ret = conn->ParseParam();
         if(ret != GET_REQUEST){
             server->HandlerErrorResult(conn,ret);
             return ;
         }
+
         // 正常情况 先调用钩子函数 最后调用处理函数
         for(auto handler:handlers){
             handler(conn);
         }
-        ep->ModifyEvent(conn,EPOLLOUT|EPOLLRDHUP|EPOLLET|EPOLLONESHOT);
+    }
+    void run(){
+        BuildResponse();
+        conn->Write();
+        conn->ReSetRequest();
+        ep->ModifyEvent(conn,EPOLLIN|EPOLLRDHUP|EPOLLONESHOT);
         return ;
     }
     
@@ -189,7 +199,7 @@ public:
         if(!conn) return;
         if(event.events & EPOLLIN){
             auto tpool = threadpool::getPool();
-            tpool->excute(std::shared_ptr<worker>(this));
+            tpool->excute(std::shared_ptr<worker>(new ClientFunc(*this)));
         }
 
         if(event.events & (EPOLLRDHUP|EPOLLHUP|EPOLLERR)){
@@ -198,18 +208,18 @@ public:
             conn->Close();
             return ;
         }
-       
-        if(event.events & EPOLLOUT){
-            int ret = conn->Write();
+       /*if(event.events & EPOLLOUT){
+            auto ret = conn->Write();
             if(!ret){
                 ep->DelEvent(conn);
                 conn->ShutDown(SHUT_RDWR);
                 conn->Close();
                 return ;
             }
-            ep->ModifyEvent(conn,EPOLLIN|EPOLLRDHUP|EPOLLET|EPOLLONESHOT);
+            conn->ReSetRequest();
+            ep->ModifyEvent(conn,EPOLLIN|EPOLLRDHUP|EPOLLONESHOT);
             return ;
-        }
+        }*/
         return ;
     }
 };
@@ -229,7 +239,7 @@ class ServerFunc:public HandleEventOBJ{
                 return ;
             }
             server->AddConn(socket);
-            ep->AddEvenet(&socket,EPOLLIN|EPOLLRDHUP|EPOLLET|EPOLLONESHOT,shared_ptr<HandleEventOBJ>(new ClientFunc(ep,server)));
+            ep->AddEvenet(&socket,EPOLLIN|EPOLLRDHUP|EPOLLONESHOT,shared_ptr<HandleEventOBJ>(new ClientFunc(ep,server)));
         }
 };
 
@@ -269,13 +279,15 @@ void HttpEngine::Run(){
     }
     my::Epoll ep;
     ep.EventInit();
+    this->ep = &ep;
     auto func = shared_ptr<HandleEventOBJ>(new ServerFunc(&ep,this));
-    ep.AddEvenet(this,EPOLLIN|EPOLLET,func);
+    ep.AddEvenet(this,EPOLLIN,func);
     ep.LoopWait();
 }
 
 void HttpEngine::AddConn(TCPSocket socket){
     HttpConn *con = new HttpConn(socket);
+    socket.SetNonBlock();
     int reuse = 1;
     setsockopt(socket.FD(), SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof( reuse ) );
     this->max_conn++;
@@ -300,7 +312,11 @@ void HttpEngine::HandlerErrorResult(HttpConn* client,HTTP_RESULT_t result,CallBa
         return ;
     }
     if(result == NO_REQUEST){
-          ep->ModifyEvent(client,EPOLLIN|EPOLLRDHUP|EPOLLET|EPOLLONESHOT);
+          int ret = ep->ModifyEvent(client,EPOLLIN|EPOLLRDHUP|EPOLLONESHOT);
+          if(ret == -1){
+            cout<<client->FD()<<endl;
+            perror("epool");
+          }
           return ;
     }
     if(result == CLOSED_CONNECTION){
