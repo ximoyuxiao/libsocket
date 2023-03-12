@@ -2,3 +2,6 @@
 *.o
 test
 test.*
+*.so
+*.a
+build/

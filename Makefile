@@ -11,32 +11,40 @@ Tpool/cond.o\
 Tpool/locker.o\
 Tpool/sem.o\
 Tpool/threadpool.o
+TARGETDIR=./build
 CXXFLAGS = -fPIC -I./include -std=c++11 -g
-LDFLAGS=-L. -lsocket -pthread  -Wl,--rpath=./
-all:libsocket.a libsocket.so
+LDFLAGS=-L${TARGETDIR} -lsocket -pthread  -Wl,--rpath=${TARGETDIR}
+# mkdir_shell =$(shell if [ ! -d $(TARGETDIR) ]; then mkdir -p $(TARGETDIR); fi)
+all:init libsocket test
+
+init:
+	$(shell if [ ! -d $(TARGETDIR) ]; then mkdir -p $(TARGETDIR); fi)
+
+libsocket:libsocket.a libsocket.so
 
 libsocket.a:${SOKCETOBJ}
-	ar -cr $@ $^
+	ar -cr ${TARGETDIR}/$@ $^
 
 libsocket.so:${SOKCETOBJ}
-	${CC} -shared -fPIC -o $@  $^
+	${CC} -shared -fPIC -o ${TARGETDIR}/$@  $^
 
 install:libsocket.so
-	cp libsocket.so /usr/lib/libsocket.so
+	cp ${TARGETDIR}/libsocket.so /usr/lib/x86_64-linux-gnu/libsocket.so
+	cp ${TARGETDIR}/libsocket.a /usr/lib/x86_64-linux-gnu/libsocket.a
+	cp -rf ./include /usr/include/libsocket/
 
 test:server client httpserver
 
 server:example/server.o
-	${CC}  $^ -o $@ ${LDFLAGS}
+	${CC}  $^ -o ${TARGETDIR}/$@ ${LDFLAGS}
 
 client:example/client.o
-	${CC}  $^ -o $@ ${LDFLAGS}
+	${CC}  $^ -o ${TARGETDIR}/$@ ${LDFLAGS}
 
 httpserver:example/httpserver.o
-	${CC} $^ -o $@ ${LDFLAGS}
+	${CC} $^ -o ${TARGETDIR}/$@ ${LDFLAGS}
 
 .PHONY : clean clean-test
 clean:
-	rm src/*.o libsocket.* http/*.o Tpool/*.o
-clean-test:
-	rm example/*.o server client httpserver
+	rm -rf ${TARGETDIR}
+	rm src/*.o http/*.o Tpool/*.o example/*.o
