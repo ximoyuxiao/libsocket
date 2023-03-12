@@ -1,12 +1,12 @@
 #include<httpconn.h>
 #include<util.h>
 #include<cstring>
-#include<httpengine.h>
 using namespace my;
 void PrintRequest(Request req);
-HttpConn::HttpConn(TCPSocket socket):TCPSocket(socket),max_read_size(1024){
+HttpConn::HttpConn(TCPSocket socket,HttpEngine* engine):TCPSocket(socket),engine(engine),max_read_size(1024){
 }
 HttpConn::~HttpConn(){
+    ReSetRequest();
     if(readbuf){
         delete readbuf;
     }
@@ -148,6 +148,10 @@ int HttpConn::BindBody(void* body,string type){}
 HTTP_RESULT_t HttpConn::ReadDataToBuff(){
     ssize_t len = ReadString(readbuf + read_idx,1024 - read_idx);
     if(len < 0){
+        perror("read");
+        if(errno == EBADF){
+            return CLOSED_CONNECTION;
+        }
         return INTERNAL_ERROR;
     }
     if(len == 0){

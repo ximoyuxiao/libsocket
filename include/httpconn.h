@@ -4,6 +4,7 @@
 #include <unordered_map>
 #include <string>
 #include <http.h>
+#include <httpengine.h>
 namespace my{
 typedef unordered_map<std::string,std::string> HTTPHeader_t;
 typedef unordered_map<std::string,std::string> HTTPCookie_t;
@@ -34,8 +35,9 @@ struct Response{
     HTTPCookie_t cookies;
     Body*   bodys;
 };
-
+class HttpEngine;
 class HttpConn:public TCPSocket{
+    HttpEngine* engine;
     Request  _request;  
     Response _response;
     char* readbuf;
@@ -49,7 +51,7 @@ private:
     HttpConn(const HttpConn&) = delete;
     HttpConn& operator=(const HttpConn&)=delete;
 public:
-    HttpConn(TCPSocket socket);
+    HttpConn(TCPSocket socket,HttpEngine* engine);
     ~HttpConn();
     void InitConn();
 public:

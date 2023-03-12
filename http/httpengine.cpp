@@ -162,32 +162,37 @@ class ClientFunc:public HandleEventOBJ,public worker{
     HttpConn* conn;
 public:
     ClientFunc(Epoll* ep,HttpEngine* server):ep(ep),server(server){}
-    void BuildResponse(){
+    HTTP_RESULT_t BuildResponse(){
         auto ret = conn->ReadToRequest();
         if(ret != GET_REQUEST){
             server->HandlerErrorResult(conn,ret);
-            return ;
+            return ret;
         }
         vector<CallBackFunc> handlers;
         conn->Router(server->VisiteURL(handlers,conn->URL(),conn->Method()));
         // 404 的情况
         if(conn->Router() == ""){
             if(server->NoRouterFunc) server->NoRouterFunc(conn);  
-            return ;
+            return ret;
         }
         ret = conn->ParseParam();
         if(ret != GET_REQUEST){
             server->HandlerErrorResult(conn,ret);
-            return ;
+            return ret;
         }
 
         // 正常情况 先调用钩子函数 最后调用处理函数
         for(auto handler:handlers){
             handler(conn);
         }
+        return GET_REQUEST;
     }
     void run(){
-        BuildResponse();
+        auto ret = BuildResponse();
+        if(ret == CLOSED_CONNECTION){
+            server->CloseClient(conn);
+            return ;
+        }
         conn->Write();
         conn->ReSetRequest();
         ep->ModifyEvent(conn,EPOLLIN|EPOLLRDHUP|EPOLLONESHOT);
@@ -195,17 +200,18 @@ public:
     }
     
     void handle(epoll_event event){
-        conn = server->conn[event.data.fd];
+        conn = server->clients[event.data.fd];
         if(!conn) return;
         if(event.events & EPOLLIN){
             auto tpool = threadpool::getPool();
             tpool->excute(std::shared_ptr<worker>(new ClientFunc(*this)));
+            return ;
         }
 
         if(event.events & (EPOLLRDHUP|EPOLLHUP|EPOLLERR)){
-            ep->DelEvent(conn);
-            conn->ShutDown(SHUT_RDWR);
-            conn->Close();
+            if(server->_mode == HttpMode::M_Debug)
+                cout<<"连接断开"<<endl;
+            server->CloseClient(conn);
             return ;
         }
        /*if(event.events & EPOLLOUT){
@@ -255,7 +261,7 @@ HttpEngine::~HttpEngine(){
     }
     if(reg_router)
         delete reg_router;
-    for(auto con:conn){
+    for(auto con:clients){
         con.second->ShutDown(SHUT_RDWR);
         con.second->Close();
         delete con.second;
@@ -286,12 +292,12 @@ void HttpEngine::Run(){
 }
 
 void HttpEngine::AddConn(TCPSocket socket){
-    HttpConn *con = new HttpConn(socket);
+    HttpConn *con = new HttpConn(socket,this);
     socket.SetNonBlock();
     int reuse = 1;
     setsockopt(socket.FD(), SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof( reuse ) );
     this->max_conn++;
-    conn[socket.FD()] = con; 
+    clients[socket.FD()] = con; 
     con->InitConn();
 }
 
@@ -354,4 +360,12 @@ int HttpEngine::VisiteAllRouter(EngineRouter* curr,string url,vector<RouterNode>
         VisiteAllRouter(router.second,newurl,routerList);
     }
     return 0;
+}
+
+void HttpEngine::CloseClient(HttpConn* client){
+    client->Close();
+    ep->DelEvent(client);
+    auto conn = clients[client->FD()];
+    delete conn;
+    clients.erase(client->FD());
 }

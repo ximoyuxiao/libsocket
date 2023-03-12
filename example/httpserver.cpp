@@ -15,7 +15,6 @@ void InitRouter(HttpEngine* engine){
         conn->WriteToJson(HttpStatus::StatusNotFound,"{\n\
             cpde:404,\n\
             msg:\"page note found\"\n\
-        \n\
         }");
     });
 }

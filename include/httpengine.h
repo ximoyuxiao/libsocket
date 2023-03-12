@@ -8,6 +8,7 @@
 #include<list>
 #include<epoll.h>
 namespace my{
+class HttpConn;
 typedef void (*CallBackFunc)(HttpConn*);
 typedef std::list<CallBackFunc> RouterList;
 typedef unordered_map<int,HttpConn*> HttpConnMap; 
@@ -56,12 +57,13 @@ public:
     void AddConn(TCPSocket socket);
     int GetAllRouter(vector<RouterNode>& routerList);
     void HandlerErrorResult(HttpConn* client,HTTP_RESULT_t result,CallBackFunc func= 0);
+    void CloseClient(HttpConn* client);
 private:
     int VisiteAllRouter(EngineRouter* curr,string url,vector<RouterNode>& routerList);
 public:
     CallBackFunc NoRouterFunc;
     HttpMode_t _mode;
-    HttpConnMap conn;
+    HttpConnMap clients;
     int max_conn;
     int current_conn;
     bool live;
