@@ -1,20 +1,10 @@
 CC=g++
-SOKCETOBJ=src/baseio.o\
-src/socket.o\
-src/tcpsocket.o\
-src/epoll.o\
-http/http.o\
-http/util.o\
-http/httpcoon.o\
-http/httpengine.o\
-Tpool/cond.o\
-Tpool/locker.o\
-Tpool/sem.o\
-Tpool/threadpool.o
+SOKCETOBJ=src/baseio.o src/socket.o src/tcpsocket.o src/epoll.o\
+http/http.o http/util.o http/httpcoon.o http/httpengine.o\
+Tpool/cond.o Tpool/locker.o Tpool/sem.o Tpool/threadpool.o
 TARGETDIR=./build
 CXXFLAGS = -fPIC -I./include -std=c++11 -g
 LDFLAGS=-L${TARGETDIR} -lsocket -pthread  -Wl,--rpath=${TARGETDIR}
-# mkdir_shell =$(shell if [ ! -d $(TARGETDIR) ]; then mkdir -p $(TARGETDIR); fi)
 all:init libsocket test
 
 init:

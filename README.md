@@ -12,7 +12,7 @@ void InitRouter(HttpEngine* engine){
     engine->Get("/ping",[](HttpConn* conn){
         conn->WriteToJson(HttpStatus::StatusOK,"{\n\
             \"code\":0,\n\
-            \"msg\":\"pong\"\n\u
+            \"msg\":\"pong\"\n\
         }");
     });
     engine->StaticFile("/static","./static/"); // 参数一：路由，参数而：文件路径

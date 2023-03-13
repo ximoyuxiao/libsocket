@@ -6,7 +6,7 @@
 #include<threadpool.h>
 using namespace my;
 
-EngineRouter::EngineRouter(string url):prefix_url(url),reg_router(nullptr){
+EngineRouter::EngineRouter(string url):prefix_url(url){
 
 }
 
@@ -14,8 +14,10 @@ EngineRouter::~EngineRouter(){
     for(auto router:routers){
         delete router.second;
     }
-    if(reg_router)
-        delete reg_router;
+    for(auto o_router:reg_router){
+        delete o_router.second;
+    }
+
 }
 
 bool EngineRouter::Get(std::string router,CallBackFunc func){
@@ -42,24 +44,6 @@ EngineRouter* EngineRouter::CreateRouter(std::string router){
     return ret;
 }
 
-EngineRouter* EngineRouter::FindRouter(std::string router){
-    if(router == "" ||!this) return this;
-    int idx = router.find_first_of('/',0);
-    auto cur_url= router.substr(0,idx);
-    auto new_url = router.substr(idx + 1,router.size() - idx -1);
-    // 直接从key里面取
-    auto next_router = this->routers[cur_url];
-    //{ID} 的情况下
-    if(!next_router && cur_url[0] == '{' && cur_url.back() == '}'){
-        if(!reg_router) reg_router = CreateRouter(router);
-        next_router = reg_router;
-    }
-    // 未注册路由
-    if(!next_router){
-        next_router = CreateRouter(router);
-    }
-    return next_router->FindRouter(new_url);
-}
 
 std::string EngineRouter::FixRouter(std::string router){
     int start = 0;
@@ -74,7 +58,12 @@ std::string EngineRouter::FixRouter(std::string router){
     }
     return router.substr(start,end - start + 1);
 }
-
+/*
+method：方法
+router:路由  /user/info/{id}
+func:回调函数  路由执行该函数
+ret:返回注册是否成功，一般来说失败的情况是路由冲突了或者路由错误
+*/
 bool EngineRouter::Register(HttpMethod_t method,std::string router,CallBackFunc func){
     if(router.size() <= 0) return false;
     router = FixRouter(router);
@@ -84,16 +73,18 @@ bool EngineRouter::Register(HttpMethod_t method,std::string router,CallBackFunc 
     for(auto router:routers){
         EngineRouter* next_router = nullptr;
         if(router[0] == '{' && router.back() == '}'){
-            if(!reg_router){
-                 reg_router = CreateRouter(router);
+            if(!reg_router.count(method)){
+                 reg_router[method] = CreateRouter(router);
             }
-            next_router = reg_router;
+            next_router = reg_router[method];
+            // 验证该路由没有被注册过
             if(router != next_router->prefix_url){
                 return false;
             }
         }else{
             next_router = curr->routers[router];
         }
+        // 没注册过的情况
         if(!next_router){
             next_router = CreateRouter(router);
         }
@@ -123,23 +114,25 @@ std::string EngineRouter::VisiteURL(vector<CallBackFunc>& handlers,std::string r
     string path = this->prefix_url;
     EngineRouter* curr = this;
     router = FixRouter(router);
-    auto routers = SpliteRouter(router);
+    auto routers = SpliteRouter(router); 
     for(auto router:routers){
+        // 中间回调函数
         for(auto handler:curr->handlerList){
             handlers.push_back(handler);
         }   
+        // 匹配路由
         if(curr->routers.count(router)){
             curr = curr->routers[router];
             path +=  curr->prefix_url  + "/";
             continue;
         }
-        if(curr->reg_router){
-            curr = curr->reg_router;
+        // 匹配正则路由
+        if(curr->reg_router.count(method)){
+            curr = curr->reg_router[method];
             path +=  curr->prefix_url  + "/";
             continue;
         }
         noRouter = true;
-        
     }
     if(!noRouter && curr->method_handler.count(method)){
         for(auto handler:curr->handlerList){
@@ -259,12 +252,10 @@ HttpEngine::~HttpEngine(){
    for(auto router:routers){
         delete router.second;
     }
-    if(reg_router)
-        delete reg_router;
+    for(auto router:reg_router)
+        delete router.second;
     for(auto con:clients){
-        con.second->ShutDown(SHUT_RDWR);
-        con.second->Close();
-        delete con.second;
+        CloseClient(con.second);
     }
 }
 
@@ -304,7 +295,7 @@ void HttpEngine::AddConn(TCPSocket socket){
 int HttpEngine::GetAllRouter(vector<RouterNode>& routerList){
     EngineRouter* router = (EngineRouter*)this;
     string url = this->prefix_url;
-    return VisiteAllRouter(router,url,routerList);
+    VisiteAllRouter(router,url,routerList);
 }
 
 void HttpEngine::HandlerErrorResult(HttpConn* client,HTTP_RESULT_t result,CallBackFunc func){
@@ -326,8 +317,7 @@ void HttpEngine::HandlerErrorResult(HttpConn* client,HTTP_RESULT_t result,CallBa
           return ;
     }
     if(result == CLOSED_CONNECTION){
-        ep->DelEvent(client);
-        client->Close();
+        CloseClient(client);
         return ;
     }
     if(result == INTERNAL_ERROR){
@@ -348,14 +338,12 @@ int HttpEngine::VisiteAllRouter(EngineRouter* curr,string url,vector<RouterNode>
             method:handler.first,
         });
     }
-    if(this->reg_router) {
-        routerList.push_back(RouterNode{
-        url:url,
-        method:"",
-        });
-    }
 
     for(auto router:routers){
+        auto newurl =  url + router.first + "/";
+        VisiteAllRouter(router.second,newurl,routerList);
+    }
+    for(auto router:reg_router){
         auto newurl =  url + router.first + "/";
         VisiteAllRouter(router.second,newurl,routerList);
     }

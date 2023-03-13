@@ -23,7 +23,8 @@ protected:
     list<CallBackFunc> handlerList;
     unordered_map<HttpMethod_t,CallBackFunc> method_handler;  // URL 匹配好之后根据router去寻找
     unordered_map<string,EngineRouter*> routers;
-    EngineRouter* reg_router; // {ID} 类的走这条路线
+    unordered_map<HttpMethod_t,EngineRouter*> reg_router;
+    vector<string> staticFile;  
 private:
     EngineRouter(const EngineRouter&)=delete;
     EngineRouter& operator=(const EngineRouter&)=delete;
@@ -40,7 +41,6 @@ public:
     std::string VisiteURL(vector<CallBackFunc>& handlers,std::string router,HttpMethod_t method);
     int StaticFile(std::string router,std::string path); // 待实现
 protected:
-    EngineRouter* FindRouter(std::string router);
     EngineRouter* CreateRouter(std::string router);
     std::string FixRouter(std::string router);
     vector<std::string> SpliteRouter(std::string router);
