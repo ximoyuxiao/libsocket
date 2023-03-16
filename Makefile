@@ -4,7 +4,7 @@ http/http.o http/util.o http/httpcoon.o http/httpengine.o\
 Tpool/cond.o Tpool/locker.o Tpool/sem.o Tpool/threadpool.o
 TARGETDIR=./build
 CXXFLAGS = -fPIC -I./include -std=c++11 -g
-LDFLAGS=-L${TARGETDIR} -lsocket -pthread  -Wl,--rpath=${TARGETDIR}
+LDFLAGS=-L${TARGETDIR} -lsocket -pthread  -Wl,--rpath=.
 all:init libsocket test
 
 init:

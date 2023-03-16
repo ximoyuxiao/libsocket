@@ -1,7 +1,7 @@
-LIBS += -pthread
-CXXFLAGS += -std=c++11 -Wall -g
-TARGET = test
-OBJECT =test.o\
+LIBS+=-pthread
+CXXFLAGS+=-std=c++11 -Wall -g -I../include
+TARGET=test
+OBJECT=test.o\
 cond.o\
 locker.o\
 sem.o\
