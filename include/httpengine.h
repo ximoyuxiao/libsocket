@@ -18,13 +18,13 @@ struct RouterNode{
 };
 
 class EngineRouter{
-protected:
+public:
     std::string prefix_url;
     list<CallBackFunc> handlerList;
     unordered_map<HttpMethod_t,CallBackFunc> method_handler;  // URL 匹配好之后根据router去寻找
     unordered_map<string,EngineRouter*> routers;
     unordered_map<HttpMethod_t,EngineRouter*> reg_router;
-    vector<string> staticFile;  
+    unordered_map<string,string> staticRouter;  
 private:
     EngineRouter(const EngineRouter&)=delete;
     EngineRouter& operator=(const EngineRouter&)=delete;
@@ -38,8 +38,10 @@ public:
     bool Delete(std::string router,CallBackFunc func);
     bool Any(std::string router,CallBackFunc func);
     bool Register(HttpMethod_t method,std::string router,CallBackFunc func);
-    std::string VisiteURL(vector<CallBackFunc>& handlers,std::string router,HttpMethod_t method);
+    // std::string VisiteURL(vector<CallBackFunc>& handlers,std::string router,HttpMethod_t method);
     int StaticFile(std::string router,std::string path); // 待实现
+protected:
+    static void StaticFileFunc(HttpConn* conn);
 protected:
     EngineRouter* CreateRouter(std::string router);
     std::string FixRouter(std::string router);
@@ -56,6 +58,7 @@ public:
     void Run();
     void AddConn(TCPSocket socket);
     int GetAllRouter(vector<RouterNode>& routerList);
+    std::string VisiteURL(vector<CallBackFunc>& handlers,HttpConn* conn);
     void HandlerErrorResult(HttpConn* client,HTTP_RESULT_t result,CallBackFunc func= 0);
     void CloseClient(HttpConn* client);
 private:

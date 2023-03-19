@@ -1,6 +1,9 @@
 #include<httpconn.h>
 #include<util.h>
 #include<cstring>
+#include <unistd.h>
+#include <sys/mman.h>
+#include <sys/sendfile.h>
 using namespace my;
 void PrintRequest(Request req);
 HttpConn::HttpConn(TCPSocket socket,HttpEngine* engine):TCPSocket(socket),engine(engine),max_read_size(1024){
@@ -43,6 +46,38 @@ string HttpConn::Router(){
 void HttpConn::Router(string router){
     this->router = router;
 }
+size_t HttpConn::StaticFileSize(){
+    return this->file_size;
+}
+void  HttpConn::StaticFileSize(size_t filesize){
+    this->file_size = filesize;
+}
+
+void HttpConn::StaticFileFD(int fd){
+    this->file_fd = fd;
+}
+int HttpConn::StaticFileFD(){
+    return file_fd;
+}
+
+bool HttpConn::FileReq(){
+    return file_req;
+}
+void HttpConn::FileReq(bool isFileReq){
+    this->file_req = isFileReq;
+}
+byte_t*  HttpConn::Address(){
+    return address;
+}
+void  HttpConn::Address(byte_t* _address){
+    this->address = _address;
+}
+void  HttpConn::StaticFileName(string filename){
+    this->static_filename = filename;
+}
+std::string  HttpConn::StaticFileName(){
+    return static_filename;
+}
 
 int HttpConn::Write(){
     // _response ---> 
@@ -58,8 +93,10 @@ int HttpConn::Write(){
     for(auto header:_response.headers){
         respLine += header.first +": " + header.second + "\r\n";
     }
-    if(_response.bodys){
+    if(_response.bodys || file_req){
         respLine += "\r\n";
+    }
+    if(_response.bodys){
         respLine += _response.bodys;
     }
     cout<<respLine<<endl;
@@ -67,6 +104,12 @@ int HttpConn::Write(){
     if(ret == -1){
         perror("WriteBytes");
         return ret;
+    }
+    if(file_req && fd >= 0){
+        ret = sendfile(FD(),file_fd,0,file_size);
+        if(ret == -1){
+            perror("SendFile");
+        }
     }
     return ret;
 }
@@ -97,6 +140,41 @@ int HttpConn::WriteToText(HttpStatus_t code,string text){
 }
 
 int HttpConn::WriteToHTML(HttpStatus code,string json){}
+std::string ParseFileType(string filename){
+    vector<string> suffixes;
+    SplitString(filename,".",suffixes);
+    cout<<filename<<endl;
+    auto suffix = suffixes.back();
+    unordered_map<string,string> suffixMap{
+        {"html", "text/html"},
+        {"css", "text/css"},
+        {"js","application/javascript"},
+        {"json", "application/json"},
+        {"xml", "application/xml"},
+        {"jpg", "image/jpeg"},
+        {"jpeg", "image/jpeg"},
+        {"png", "image/png"},
+        {"gif","image/gif"},
+        {"svg", "image/svg+xml"},
+        {"pdf", "application/pdf"},
+        {"txt", "text/plain"},
+        {"csv", "text/csv"},
+        {"zip", "application/zip"},
+        {"tar", "application/x-tar"},
+    } ;
+    if(suffixMap.count(suffix)){
+        return suffixMap[suffix];
+    }
+    return "text/plain";
+}
+int HttpConn::WriteToFile(){
+    if(fd >= 0){
+        _response.ContentType = ParseFileType(static_filename);  //文件类型
+        _response.status = HttpStatus::StatusOK;
+        _response.ContentLength = file_size;
+    }
+    return 0;
+}
 
 HTTP_RESULT_t HttpConn::ReadToRequest(){
     auto ret = ReadDataToBuff();
@@ -144,6 +222,13 @@ string HttpConn::GetParam(string key){
 } // key value
 
 int HttpConn::BindBody(void* body,string type){}
+
+string HttpConn::GetStaticFileName(){
+    if(static_filename[0] != '/' && static_filename[0] != '\\'){
+        return "./" + static_filename;
+    }
+    return static_filename;
+}
 
 HTTP_RESULT_t HttpConn::ReadDataToBuff(){
     ssize_t len = ReadString(readbuf + read_idx,1024 - read_idx);
@@ -357,6 +442,15 @@ void HttpConn::ReSetRequest(){
     //clear request
     this->line_status = LINE_OPEN;
     this->check_status = CHECK_STATE_REQUESTLINE;
+    if(file_req){
+        static_filename = "";
+        file_req = false;
+        if(file_fd >= 0){
+            close(file_fd);
+            file_fd = -1;
+        }
+        file_size = 0;
+    }
     auto req = &_request;
     req->URL = "";
     req->method = "";

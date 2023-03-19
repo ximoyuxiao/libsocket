@@ -10,7 +10,7 @@ void InitRouter(HttpEngine* engine){
         }");
     });
 
-    engine->StaticFile("/static","./static/"); // 参数一：路由，参数而：文件路径
+    engine->StaticFile("/static/","../static/"); // 参数一：路由，参数而：文件路径
     engine->NoRouter([](HttpConn* conn){
         conn->WriteToJson(HttpStatus::StatusNotFound,"{\n\
             cpde:404,\n\
@@ -20,7 +20,7 @@ void InitRouter(HttpEngine* engine){
 }
 
 int main(){
-    HttpEngine engine(4212);
+    HttpEngine engine(4490);
     InitRouter(&engine); //初始化路由
     engine.SetMode(HttpMode::M_Debug);
     engine.Run(); // 监听端口

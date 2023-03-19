@@ -47,6 +47,23 @@ class HttpConn:public TCPSocket{
     ssize_t  line_start_idx; //本行开始的行
     vector<byte_t> writebuf;
     string router;
+
+    string static_filename;
+    int file_fd;
+    bool   file_req;
+    byte_t* address;
+    size_t  file_size;
+public:
+    bool FileReq();
+    void FileReq(bool isFileReq);
+    size_t StaticFileSize();
+    void   StaticFileSize(size_t filesize = 0);
+    void StaticFileFD(int fd);
+    int StaticFileFD();
+    byte_t* Address();
+    void Address(byte_t*);
+    void StaticFileName(string filename);
+    std::string StaticFileName(void);
 private:
     HttpConn(const HttpConn&) = delete;
     HttpConn& operator=(const HttpConn&)=delete;
@@ -71,6 +88,7 @@ public:
     int WriteToXML(HttpStatus code,string json);
     int WriteToText(HttpStatus_t code,string text);
     int WriteToHTML(HttpStatus code,string json);
+    int WriteToFile();
     HTTP_RESULT_t ReadToRequest();
     string GetHeader(string key);
     void SetHeader(string key,string value);
@@ -82,6 +100,7 @@ public:
     string GetParam(string key); // key value
 
     int BindBody(void* body,string type);
+    string GetStaticFileName();
 private:
     HTTP_RESULT_t ReadDataToBuff();
     HTTP_RESULT_t ParseRequest();

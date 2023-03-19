@@ -4,6 +4,10 @@
 #include<util.h>
 #include<worker.h>
 #include<threadpool.h>
+#include<cstring>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
 using namespace my;
 
 EngineRouter::EngineRouter(string url):prefix_url(url){
@@ -44,7 +48,7 @@ EngineRouter* EngineRouter::CreateRouter(std::string router){
     return ret;
 }
 
-
+// return xxx/xxx/xxxx/
 std::string EngineRouter::FixRouter(std::string router){
     int start = 0;
     int end = router.size() - 1;
@@ -105,48 +109,51 @@ vector<std::string> EngineRouter::SpliteRouter(std::string router){
     SplitString(router,"/",ret);
     return ret;
 }
-/*
-return: /url/xxx/
-*/
-std::string EngineRouter::VisiteURL(vector<CallBackFunc>& handlers,std::string router,HttpMethod_t method){
-    if(router.size() <= 0) return "";
-    bool noRouter = false;
-    string path = this->prefix_url;
-    EngineRouter* curr = this;
-    router = FixRouter(router);
-    auto routers = SpliteRouter(router); 
-    for(auto router:routers){
-        // 中间回调函数
-        for(auto handler:curr->handlerList){
-            handlers.push_back(handler);
-        }   
-        // 匹配路由
-        if(curr->routers.count(router)){
-            curr = curr->routers[router];
-            path +=  curr->prefix_url  + "/";
-            continue;
-        }
-        // 匹配正则路由
-        if(curr->reg_router.count(method)){
-            curr = curr->reg_router[method];
-            path +=  curr->prefix_url  + "/";
-            continue;
-        }
-        noRouter = true;
+
+// set xxx/xxx/   ---> FILE:
+int EngineRouter::StaticFile(std::string router,std::string path){
+    router = FixRouter(router);  // 修复 路由
+    if(path.back() == '/' || path.back() == '\\'){
+        path = path.substr(0,path.size() - 1);
     }
-    if(!noRouter && curr->method_handler.count(method)){
-        for(auto handler:curr->handlerList){
-            handlers.push_back(handler);
-        }
-        handlers.push_back(curr->method_handler[method]);
-        return path;
-    }
-    handlers = vector<CallBackFunc>();
-    return "";
+    staticRouter[router] = path;
+    return 0;
 }
 
-int EngineRouter::StaticFile(std::string router,std::string path){
-    return 0;
+void EngineRouter::StaticFileFunc(HttpConn* conn){
+    std::string filename = conn->GetStaticFileName();
+    struct stat m_file_stat;
+    if ( stat( filename.c_str(), &m_file_stat ) < 0 ) {
+        conn->WriteToJson(HttpStatus::StatusForbidden,"{\n\
+                \"code\":404,\n\
+                \"msg\":\"not file found\"\n\
+            }");
+        return ;
+    }
+
+    // 判断访问权限
+    if ( ! ( m_file_stat.st_mode & S_IROTH ) ) {
+        conn->WriteToJson(HttpStatus::StatusForbidden,"{\n\
+                \"code\":403,\n\
+                \"msg\":\"not access\"\n\
+            }");
+        return ;
+    }
+
+    // 判断是否是目录
+    if ( S_ISDIR( m_file_stat.st_mode ) ) {
+        conn->WriteToJson(HttpStatus::StatusInternalServerError,"{\n\
+                \"code\":500,\n\
+                \"msg\":\"server parse failed\"\n\
+            }");
+        return ;
+    }
+    
+    conn->StaticFileSize(m_file_stat.st_size);
+    
+    auto fd = open(filename.c_str(),O_RDONLY);
+    conn->StaticFileFD(fd);
+    conn->WriteToFile();
 }
 
 class ClientFunc:public HandleEventOBJ,public worker{
@@ -156,14 +163,16 @@ class ClientFunc:public HandleEventOBJ,public worker{
 public:
     ClientFunc(Epoll* ep,HttpEngine* server):ep(ep),server(server){}
     HTTP_RESULT_t BuildResponse(){
+        // 解析请求
         auto ret = conn->ReadToRequest();
         if(ret != GET_REQUEST){
             server->HandlerErrorResult(conn,ret);
             return ret;
         }
+        // 解析路由，并压入文件请求
         vector<CallBackFunc> handlers;
-        conn->Router(server->VisiteURL(handlers,conn->URL(),conn->Method()));
-        // 404 的情况
+        conn->Router(server->VisiteURL(handlers,conn));
+        // 404的情况下
         if(conn->Router() == ""){
             if(server->NoRouterFunc) server->NoRouterFunc(conn);  
             return ret;
@@ -329,25 +338,101 @@ void HttpEngine::HandlerErrorResult(HttpConn* client,HTTP_RESULT_t result,CallBa
     }
 }
 
-
 int HttpEngine::VisiteAllRouter(EngineRouter* curr,string url,vector<RouterNode>& routerList){
     // 放入所有的叶子节点
-    for(auto handler:method_handler){
+    
+    // dynamic router
+    for(auto handler:curr->method_handler){
         routerList.push_back(RouterNode{
             url:url,
             method:handler.first,
         });
     }
+    
+    // static router
+    for(auto path:curr->staticRouter){
+        routerList.push_back(RouterNode{
+            url:url + path.first + "/*",
+            method:HttpMethod::GET,
+        });
+    }
+    
+    // 下一个路由
+    for(auto router:curr->routers){
+        auto newurl =  url + router.first + "/";
+        VisiteAllRouter(router.second,newurl,routerList);
+    }
 
-    for(auto router:routers){
+    // 正则路由
+    for(auto router:curr->reg_router){
         auto newurl =  url + router.first + "/";
         VisiteAllRouter(router.second,newurl,routerList);
     }
-    for(auto router:reg_router){
-        auto newurl =  url + router.first + "/";
-        VisiteAllRouter(router.second,newurl,routerList);
-    }
+    
     return 0;
+}
+
+/*
+return: /url/xxx/
+*/
+std::string HttpEngine::VisiteURL(vector<CallBackFunc>& handlers,HttpConn* conn){
+    auto router = conn->URL();
+    auto method = conn->Method();
+    if(router.size() <= 0) return "";
+    bool noRouter = false;
+    string path = "/";
+    EngineRouter* curr = this;
+    router = FixRouter(router);
+    auto routers = SpliteRouter(router);
+    auto idx = 0; 
+    for(auto router:routers){
+        // 匹配静态路由
+        string staticURL = "";
+        for(int i = idx;i<routers.size();i++){
+            staticURL += routers[idx] + "/";
+            if(curr->staticRouter.count(staticURL)){
+                path += staticURL;
+                handlers.push_back(StaticFileFunc);
+                auto FilePrefix = curr->staticRouter[staticURL];
+                string file = "";
+                for(int j = i+1;j<routers.size();j++){
+                    file +="/" +  routers[j];
+                }  
+                conn->StaticFileName(FilePrefix + file);
+                conn->FileReq(true);
+                return path;
+            }
+        }
+        idx++;
+        // 中间回调函数
+        for(auto handler:curr->handlerList){
+            handlers.push_back(handler);
+        }   
+        
+        // 匹配路由
+        if(curr->routers.count(router)){
+            curr = curr->routers[router];
+            path +=  curr->prefix_url  + "/";
+            continue;
+        }
+        
+        // 匹配正则路由
+        if(curr->reg_router.count(method)){
+            curr = curr->reg_router[method];
+            path +=  curr->prefix_url  + "/";
+            continue;
+        }
+        noRouter = true;
+    }
+    if(!noRouter && curr->method_handler.count(method)){
+        for(auto handler:curr->handlerList){
+            handlers.push_back(handler);
+        }
+        handlers.push_back(curr->method_handler[method]);
+        return path;
+    }
+    handlers = vector<CallBackFunc>();
+    return "";
 }
 
 void HttpEngine::CloseClient(HttpConn* client){

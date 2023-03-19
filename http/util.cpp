@@ -3,6 +3,7 @@
 #include <iomanip>
 #include <string>
 #include<util.h>
+#include<cstdio>
 namespace my{
 
 std::string toHex(unsigned char c) {
