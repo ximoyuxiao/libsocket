@@ -5,6 +5,7 @@
 #include <string>
 #include <http.h>
 #include <httpengine.h>
+#include <resptype.h>
 namespace my{
 typedef unordered_map<std::string,std::string> HTTPHeader_t;
 typedef unordered_map<std::string,std::string> HTTPCookie_t;
@@ -85,6 +86,7 @@ public:
     int Write();
     // 解析出来的路由
     int WriteToJson(HttpStatus_t code,string json);
+    int WriteToJson(HttpStatus_t code,JsonType* obj);
     int WriteToXML(HttpStatus code,string json);
     int WriteToText(HttpStatus_t code,string text);
     int WriteToHTML(HttpStatus code,string json);
@@ -100,6 +102,7 @@ public:
     string GetParam(string key); // key value
 
     int BindBody(void* body,string type);
+    void BindJsonBody(JsonType* ret);
     string GetStaticFileName();
 private:
     HTTP_RESULT_t ReadDataToBuff();

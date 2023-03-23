@@ -6,3 +6,4 @@ test.*
 *.a
 build/
 static/
+test*

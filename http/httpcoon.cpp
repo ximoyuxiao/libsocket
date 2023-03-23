@@ -4,6 +4,7 @@
 #include <unistd.h>
 #include <sys/mman.h>
 #include <sys/sendfile.h>
+#include <nlohmann/json.hpp>
 using namespace my;
 void PrintRequest(Request req);
 HttpConn::HttpConn(TCPSocket socket,HttpEngine* engine):TCPSocket(socket),engine(engine),max_read_size(1024){
@@ -14,6 +15,7 @@ HttpConn::~HttpConn(){
         delete readbuf;
     }
 }
+
 void HttpConn::InitConn(){
     readbuf = new char[max_read_size];
     read_idx = 0;
@@ -63,18 +65,22 @@ int HttpConn::StaticFileFD(){
 bool HttpConn::FileReq(){
     return file_req;
 }
+
 void HttpConn::FileReq(bool isFileReq){
     this->file_req = isFileReq;
 }
 byte_t*  HttpConn::Address(){
     return address;
 }
+
 void  HttpConn::Address(byte_t* _address){
     this->address = _address;
 }
+
 void  HttpConn::StaticFileName(string filename){
     this->static_filename = filename;
 }
+
 std::string  HttpConn::StaticFileName(){
     return static_filename;
 }
@@ -122,6 +128,14 @@ int HttpConn::WriteToJson(HttpStatus_t code,string json){
     _response.bodys = new byte_t[len + 1]();
     bzero(_response.bodys,len + 1);
     memcpy(_response.bodys,json.c_str(),len + 1);
+    return len + 1;
+}
+
+int HttpConn::WriteToJson(HttpStatus_t code,JsonType* obj){
+    nlohmann::json j;
+    obj->to_json(j);
+    auto str = j.dump();
+    return WriteToJson(code,str);
 }
 
 int HttpConn::WriteToXML(HttpStatus code,string json){
@@ -140,6 +154,7 @@ int HttpConn::WriteToText(HttpStatus_t code,string text){
 }
 
 int HttpConn::WriteToHTML(HttpStatus code,string json){}
+
 std::string ParseFileType(string filename){
     vector<string> suffixes;
     SplitString(filename,".",suffixes);
@@ -167,6 +182,7 @@ std::string ParseFileType(string filename){
     }
     return "text/plain";
 }
+
 int HttpConn::WriteToFile(){
     if(fd >= 0){
         _response.ContentType = ParseFileType(static_filename);  //文件类型
@@ -223,6 +239,12 @@ string HttpConn::GetParam(string key){
 
 int HttpConn::BindBody(void* body,string type){}
 
+void HttpConn::BindJsonBody(JsonType* ret){
+    string json = _request.bodys;
+    nlohmann::json j = nlohmann::json::parse(json);
+    ret->from_json(j);
+    return ;
+}
 string HttpConn::GetStaticFileName(){
     if(static_filename[0] != '/' && static_filename[0] != '\\'){
         return "./" + static_filename;

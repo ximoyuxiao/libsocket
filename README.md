@@ -1,35 +1,39 @@
 # libsocket
-这是一个基于epoll的实现的网络库，其采用了事件机制
+## 项目介绍
+### 项目简介
+一个基于C++11和epoll的实现的轻量级网络框架,其采用了事件机制。
 
-#### 项目依赖下载
-```c++
-#include<iostream>
-#include<http.h>
-#include<httpengine.h>
-using namespace my;
-void InitRouter(HttpEngine* engine){
-    // /ping的GET请求
-    engine->Get("/ping",[](HttpConn* conn){
-        conn->WriteToJson(HttpStatus::StatusOK,"{\n\
-            \"code\":0,\n\
-            \"msg\":\"pong\"\n\
-        }");
-    });
-    engine->StaticFile("/static","./static/"); // 参数一：路由，参数而：文件路径
-    // 404的情况
-    engine->NoRouter([](HttpConn* conn){
-        conn->WriteToJson(HttpStatus::StatusNotFound,"{\n\
-            \"errno\":404,\n\
-            \"msg\":\"page note found\"\n\
-        \n\
-        }");
-    });
-}
-int main(){
-    HttpEngine engine(4212); // 启动一个HTTP引擎
-    InitRouter(&engine); //初始化路由
-    engine.SetMode(HttpMode::M_Debug); //设置启动的模式
-    engine.Run(); // 启动服务器并监听端口
-    return 0;
-}
+### 项目特点
+## 安装及其使用
+### 安装与依赖
+1、环境Ubuntu18.04、C++11
+#### 安装nlohmann/json
+```sh
+方法一:
+    sudo apt-get install nlohmann-json-dev
+方法二:
+https://github.com/nlohmann/json/releases 
+wget https://github.com/nlohmann/json/archive/refs/tags/v3.11.2.tar.gz
+tar -zxvf v3.11.2.tar.gz
+cd json-3.11.2
+mkdir build && cd build
+cmake ..
+make
+sudo make install
+
 ```
+#### 安装libsocket框架
+```sh
+make
+make install
+```
+### 使用
+    1、查看example的实例库进行编写代码。
+    2、加入参数 -lsocket、-L /usr/lib/x86_64-linux-gnu/ -I/usr/include/libsocket/
+
+## Q&A
+
+
+## 联系方式
+邮箱：a2571717957@163.com（本项目相关或网络编程相关问题请走issue流程，否则恕不邮件答复）
+QQ：2571717957
