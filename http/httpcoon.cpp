@@ -133,7 +133,7 @@ int HttpConn::WriteToJson(HttpStatus_t code,string json){
 
 int HttpConn::WriteToJson(HttpStatus_t code,JsonType* obj){
     nlohmann::json j;
-    obj->to_json(j);
+    obj->ToJson(j);
     auto str = j.dump();
     return WriteToJson(code,str);
 }
@@ -242,7 +242,7 @@ int HttpConn::BindBody(void* body,string type){}
 void HttpConn::BindJsonBody(JsonType* ret){
     string json = _request.bodys;
     nlohmann::json j = nlohmann::json::parse(json);
-    ret->from_json(j);
+    ret->FromJson(j);
     return ;
 }
 string HttpConn::GetStaticFileName(){

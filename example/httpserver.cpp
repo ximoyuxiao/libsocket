@@ -3,31 +3,44 @@
 #include<httpengine.h>
 #include<resptype.h>
 using namespace my;
-class LoginReq:public JsonType{
-    string username;
-    string password;
+
+MYLIBSOCKET_DECL_JSON_CLASS_HEAD(Resp,int,code,string,msg)
+MYLIBSOCKET_DECL_CLASS_END
+
+MYLIBSOCKET_DEFINE_CLASS(Resp,int,code,string,msg)
+MYLIBSOCKET_DEFINE_JSON_SERIALIZATION(Resp,code,msg)
+
+//声明一个类
+MYLIBSOCKET_DECL_JSON_CLASS_HEAD(LoginReq,string,username,string,password,string,salt,bool,login)
 public:
-    LoginReq(string username="",string password=""):username(username),password(password){}
-public:
-    string UserName(){return username;}
-    string PassWord(){return password;}
-    void UserName(string _user){
-        username = _user;
+    bool CheckLogin();
+MYLIBSOCKET_DECL_CLASS_END
+
+// 定义一个类 主要是实现GET和SET方法
+MYLIBSOCKET_DEFINE_CLASS(LoginReq,string,username,string,password,string,salt,bool,login)
+// 实现ToJson和To
+MYLIBSOCKET_DEFINE_JSON_SERIALIZATION(LoginReq,username,password)
+
+
+bool LoginReq::CheckLogin(){
+    if(this->username == "admin" && this->password == "123456"){
+        return true;
     }
-    void PassWord(string _pass){
-        password  = _pass;
-    }
-public:
-    void to_json(nlohmann::json& nlohmann_json_j);
-    void from_json(const nlohmann::json&nlohmann_json_j);
-};
-REGISTER_DEFINE_JSON_SERIALIZATION(LoginReq,username,password);
+    return false;
+}
 
 void InitRouter(HttpEngine* engine){
     engine->Post("/login",[](HttpConn* conn){
         LoginReq req;
+        Resp resp;
         conn->BindJsonBody(&req);
-        conn->WriteToJson(HttpStatus::StatusOK,&req);
+        if(!req.CheckLogin()){
+            resp.Setcode(200);
+            resp.Setmsg("账号或密码错误");
+            conn->WriteToJson(HttpStatus::StatusOK,&resp);
+        }else{
+            conn->WriteToJson(HttpStatus::StatusOK,&req);
+        }
     });
     
     engine->Get("/ping",[](HttpConn* conn){
