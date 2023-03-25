@@ -2,6 +2,7 @@
 #include<http.h>
 #include<httpengine.h>
 #include<resptype.h>
+#include<unistd.h>
 using namespace my;
 
 MYLIBSOCKET_DECL_JSON_CLASS_HEAD(Resp,int,code,string,msg)
@@ -54,16 +55,23 @@ void InitRouter(HttpEngine* engine){
 
     engine->StaticFile("/static/","../static/"); // 参数一：路由，参数而：文件路径
     engine->NoRouter([](HttpConn* conn){
-        conn->WriteToJson(HttpStatus::StatusNotFound,"{\n\
-            cpde:404,\n\
-            msg:\"page note found\"\n\
-        }");
+        Resp resp;
+        resp.Setcode(404);
+        resp.Setmsg("页面不存在");
+        conn->WriteToJson(HttpStatus::StatusNotFound,&resp);
     });
 }
 
 int main(){
+    pid_t pid = getpid();
+    cout<<pid<<endl;
     HttpEngine engine(4490);
     InitRouter(&engine); //初始化路由
+    vector<RouterNode> routers;
+    engine.GetAllRouter(routers);
+    for(auto router:routers){
+        cout<<router.method<<":"<<router.url<<endl;
+    }
     engine.SetMode(HttpMode::M_Debug);
     engine.Run(); // 监听端口
     return 0;

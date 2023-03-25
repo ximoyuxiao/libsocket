@@ -55,7 +55,7 @@ std::string URLdecode(std::string url){
                 break;
             case '%':
                 if (i + 2 < len && isxdigit(url[i + 1]) && isxdigit(url[i + 2])) {
-                    sscanf(url.substr(i + 1, 2).c_str(), "%x", &c);
+                    sscanf(url.substr(i + 1, 2).c_str(), "%x", (unsigned int*)&c);
                     result += c;
                     i += 2;
                 }

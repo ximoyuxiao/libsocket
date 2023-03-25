@@ -22,6 +22,7 @@ struct Request{
     bool keepalive;
     HTTPHeader_t headers;
     ssize_t ContentLength;
+    ssize_t bodyLength;
     string ContentType;
     HTTPCookie_t cookies;
     Body*   bodys;
@@ -55,6 +56,7 @@ class HttpConn:public TCPSocket{
     byte_t* address;
     size_t  file_size;
 public:
+    bool KeepAlive();
     bool FileReq();
     void FileReq(bool isFileReq);
     size_t StaticFileSize();

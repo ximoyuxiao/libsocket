@@ -191,12 +191,14 @@ public:
     }
     void run(){
         auto ret = BuildResponse();
-        if(ret == CLOSED_CONNECTION){
-            server->CloseClient(conn);
+        if(ret == NO_REQUEST || ret == CLOSED_CONNECTION){
             return ;
         }
         conn->Write();
         conn->ReSetRequest();
+        if(!conn->KeepAlive()){
+            server->CloseClient(conn);
+        }
         ep->ModifyEvent(conn,EPOLLIN|EPOLLRDHUP|EPOLLONESHOT);
         return ;
     }
@@ -309,6 +311,8 @@ int HttpEngine::GetAllRouter(vector<RouterNode>& routerList){
 
 void HttpEngine::HandlerErrorResult(HttpConn* client,HTTP_RESULT_t result,CallBackFunc func){
     if(result == GET_REQUEST) return ;
+    if(result)
+        cout<<result<<endl;
     if(func) func(client);
     if(result == BAD_REQUEST){
         client->WriteToJson(HttpStatus::StatusBadRequest,"{\n\

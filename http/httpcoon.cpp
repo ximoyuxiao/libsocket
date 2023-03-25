@@ -22,6 +22,8 @@ void HttpConn::InitConn(){
     line_idx = 0;
     line_start_idx = 0;
     router = "";
+    _request.bodys = nullptr;
+    _response.bodys = nullptr;
     ReSetRequest();
 }
 
@@ -69,6 +71,7 @@ bool HttpConn::FileReq(){
 void HttpConn::FileReq(bool isFileReq){
     this->file_req = isFileReq;
 }
+
 byte_t*  HttpConn::Address(){
     return address;
 }
@@ -124,8 +127,9 @@ int HttpConn::WriteToJson(HttpStatus_t code,string json){
     auto len = json.size();
     _response.ContentType = "application/json";
     _response.status = code;
-    _response.ContentLength = json.size();
+    _response.ContentLength = len;
     _response.bodys = new byte_t[len + 1]();
+    printf("malloc resp:%x\n",_response.bodys);
     bzero(_response.bodys,len + 1);
     memcpy(_response.bodys,json.c_str(),len + 1);
     return len + 1;
@@ -158,7 +162,6 @@ int HttpConn::WriteToHTML(HttpStatus code,string json){}
 std::string ParseFileType(string filename){
     vector<string> suffixes;
     SplitString(filename,".",suffixes);
-    cout<<filename<<endl;
     auto suffix = suffixes.back();
     unordered_map<string,string> suffixMap{
         {"html", "text/html"},
@@ -194,18 +197,19 @@ int HttpConn::WriteToFile(){
 
 HTTP_RESULT_t HttpConn::ReadToRequest(){
     auto ret = ReadDataToBuff();
-    cout<<readbuf<<endl<<endl<<endl;
+    // cout<<readbuf<<endl<<endl<<endl;
     if(ret != NO_REQUEST)
         return ret;
     ret = ParseRequest();
     //line_idx 之前的已经读过了,将读过的信息重置一下
-    char buff[max_read_size];
+    char* buff = new char[max_read_size]();
     memcpy(buff,readbuf + line_idx,read_idx - line_idx);
     memset(readbuf,0,max_read_size);
     memcpy(readbuf,buff,read_idx - line_idx);
     read_idx = read_idx - line_idx;
     line_idx = 0;
     line_start_idx = 0;
+    delete [] buff;
     return ret;
 }
 
@@ -284,8 +288,9 @@ HTTP_RESULT_t HttpConn::ParseRequest(){
             }
             case CHECK_STATE_HEADER:{
                 ret = ParseHeaderLine(text);
-                if(_request.ContentLength){
-                    _request.bodys = new byte_t[_request.ContentLength + 1];
+                if(_request.ContentLength && !_request.bodys){
+                    _request.bodys = new byte_t[_request.ContentLength + 1]();
+                    printf("malloc:%x\n",_request.bodys);
                     bzero(_request.bodys,_request.ContentLength + 1);
                 }
                 break;
@@ -437,12 +442,15 @@ HTTP_RESULT_t HttpConn::ParseHeaderLine(string text){
 }
 
 HTTP_RESULT_t HttpConn::ParseContentLine(const char* text){
-    if(read_idx >= _request.ContentLength + line_start_idx ){
-        memcpy(_request.bodys,text,_request.ContentLength);
-        line_idx = _request.ContentLength + line_start_idx;
+    if(read_idx >= _request.ContentLength -_request.bodyLength + line_start_idx ){
+        memcpy(_request.bodys + _request.bodyLength,text,_request.ContentLength -_request.bodyLength);
+        _request.bodyLength = _request.ContentLength;
+        line_idx = _request.ContentLength -_request.bodyLength + line_start_idx;
         return GET_REQUEST;
     } 
-    memcpy(_request.bodys,text,read_idx - line_start_idx);
+    memcpy(_request.bodys + _request.bodyLength,text,read_idx - line_start_idx);
+    line_idx = read_idx;
+    _request.bodyLength += read_idx - line_start_idx;
     return NO_REQUEST;
 }
 
@@ -457,6 +465,10 @@ void HttpConn::ParseCookie(string value){
         _request.cookies[key] = value;
     }
     
+}
+
+bool HttpConn::KeepAlive(){
+    return _request.keepalive;
 }
 
 //服务端响应完毕之后才会做清理的动作
@@ -481,8 +493,11 @@ void HttpConn::ReSetRequest(){
     req->ContentLength = 0;
     req->ContentType ="";
     req->cookies.clear();
+    req->bodyLength = 0;
     if(req->bodys){
+        printf("release:%p",req->bodys);
         delete []req->bodys;
+        printf(" success\n");
         req->bodys = nullptr;
     }
      
@@ -493,7 +508,9 @@ void HttpConn::ReSetRequest(){
     resp->ContentType = "";
     resp->cookies.clear();
     if(resp->bodys){
+        printf("release resp:%p",resp->bodys);
         delete []resp->bodys;
+        printf(" success\n");
         resp->bodys = nullptr;
     }
 }
