@@ -74,8 +74,8 @@ MultipartFile* ReadAndCreateMultipartFile(byte_t* body,int s,int e){
     
     body += idx;
     len -=idx;
-    ret->Setsize(len - 2);
-    ret->SetContent(body + 2,len - 2);
+    ret->Setsize(len - 4);
+    ret->SetContent(body + 2,len - 4);
     return ret;
 }
 std::vector<MultipartFile*> Request::FromFile(const std::string & name){
@@ -197,21 +197,31 @@ std::vector<MultipartFile*> HttpConn::PostFrom(const std::string &name){
 }
 
 int HttpConn::SaveUploadFile(const MultipartFile* file,const std::string path){
-    int fd = open(path.c_str(),O_CREAT|O_RDWR|0666);
+    int fd = open(path.c_str(),O_CREAT|O_RDWR,0666);
     if(fd < 0){
         perror("open:");
         return fd;
     }
-    // auto addr =  mmap(0,file->Getsize(),PROT_WRITE,MAP_PRIVATE,fd,0);
-    write(fd,file->GetContent(),file->Getsize());
-    // memcpy(addr,file->GetContent(),file->Getsize());
+    lseek(fd,file->Getsize() -1,SEEK_CUR);
+    write(fd,"\0",1);
+    auto addr =  mmap(0,file->Getsize(),PROT_WRITE,MAP_SHARED,fd,0);
+    if (addr == MAP_FAILED) {
+        perror("mmap");
+        return -1;
+    }
+    memcpy(addr,file->GetContent(),file->Getsize());
+    int ret = munmap(addr,file->Getsize());
+    if(ret == -1){
+        perror("munmap:");
+        return -1;
+    }
+    msync(addr, file->Getsize(), MS_SYNC);
     close(fd);
     return 0;
 }
 
 int HttpConn::Write(){
     // _response ---> 
-    cout<<"Write"<<endl;
     auto respLine = _request.http_version + " " + to_string(_response.status) + " " + statusStr[_response.status] + "\r\n";
     SetHeader("Content-Length",to_string(_response.ContentLength));
     SetHeader("Content-Type",_response.ContentType);
@@ -229,7 +239,6 @@ int HttpConn::Write(){
     if(_response.bodys){
         respLine += _response.bodys;
     }
-    cout<<respLine<<endl;
     int ret =  WriteString(respLine.c_str(),respLine.size());
     if(ret == -1){
         perror("WriteBytes");
@@ -317,7 +326,9 @@ int HttpConn::WriteToFile(){
 
 HTTP_RESULT_t HttpConn::ReadToRequest(){
     auto ret = ReadDataToBuff();
+#ifdef MY_DEBUG
     cout<<readbuf<<endl<<endl<<endl;
+#endif
     if(ret != NO_REQUEST)
         return ret;
     ret = ParseRequest();
@@ -636,11 +647,13 @@ void HttpConn::RequestToWriteBuff(){
 }
 
 void PrintRequest(Request req){
+#ifdef MY_DEBUG
     cout<<"req:\n"<<req.method<<" "<<req.URL<<" "<<req.http_version<<endl;
     cout<<"query\n";
     for(auto query:req.query){
         cout<<query.first<<" "<<query.second<<endl;
     }
+
     cout<<"param\n";
     for(auto query:req.param){
         cout<<query.first<<" "<<query.second<<endl;
@@ -653,4 +666,5 @@ void PrintRequest(Request req){
     cout<<req.bodys<<endl;
     cout<<endl;
     cout<<req.ContentLength<<endl<<req.ContentType<<endl;
+#endif
 }

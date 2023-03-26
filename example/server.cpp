@@ -36,7 +36,9 @@ public:
                 return ;
             }
             socket.WriteString("hello world\n",strlen("hello world\n"));
+#ifdef MY_DEBUG
             printf("%d:%s\n",socket.FD(),buf);
+#endif
             ep->ModifyEvent(&socket,EPOLLIN|EPOLLRDHUP|EPOLLET|EPOLLONESHOT);
             return ;
         }
