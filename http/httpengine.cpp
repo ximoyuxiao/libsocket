@@ -90,7 +90,7 @@ bool EngineRouter::Register(HttpMethod_t method,std::string router,CallBackFunc 
         }
         // 没注册过的情况
         if(!next_router){
-            next_router = CreateRouter(router);
+            next_router = curr->CreateRouter(router);
         }
         curr = next_router;
     }
