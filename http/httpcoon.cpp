@@ -1,14 +1,105 @@
-#include<httpconn.h>
-#include<util.h>
-#include<cstring>
-#include <unistd.h>
 #include <sys/mman.h>
 #include <sys/sendfile.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <util.h>
+#include <cstring>
+#include <unistd.h>
+
+#include <httpconn.h>
 #include <nlohmann/json.hpp>
+
 using namespace my;
 void PrintRequest(Request req);
+vector<size_t>  GetBoundarys(byte_t* bodys,size_t length,std::string boundary){
+    vector<size_t> boundarys;
+    size_t ReadBodySize = 0;
+    auto startBoundary = "--" + boundary;
+    auto endBoundary = startBoundary + "--";
+    // 2.获得最后的终点 
+    auto lastBoundaryIdx = FindBinary(bodys,ReadBodySize,length,endBoundary.data(),endBoundary.size());
+    if(lastBoundaryIdx == std::numeric_limits<size_t>::max()) return boundarys;
+    while(ReadBodySize < length){
+        auto read = FindBinary(bodys,ReadBodySize,length,startBoundary.data(),startBoundary.size());
+        // 需要检查正确性
+        boundarys.push_back(read);
+        if(read == lastBoundaryIdx){
+            break;
+        }
+        ReadBodySize =  read + startBoundary.size();
+    }
+    return boundarys;
+}
+size_t GetLine(byte_t* body,int len){
+    int s = 0;
+    while(s < len){
+        if(body[s] == '\r' ){
+            if(s + 1 == len){
+                return 0;
+            }
+            if(body[s + 1] == '\n'){
+                body[s++] = '\0';
+                body[s++] = '\0';
+            }
+            break;
+        }
+        s++;
+    }
+    return s;
+}
+MultipartFile* ReadAndCreateMultipartFile(byte_t* body,int s,int e){
+    MultipartFile* ret = new MultipartFile();
+    size_t ContentDisIdx,ContentTypeIdx;
+    body = body + s;
+    int len = e - s;
+    auto idx = GetLine(body,len);
+    body += idx;
+    len -= idx;
+    idx = GetLine(body,len);
+    vector<string> splite;
+    SplitString(body,";",splite);
+    // Content-Disposition: 
+    ret->SetdispostionType(splite[0].substr(21,splite[0].size() - 21));
+    // name=""
+    ret->Setname(splite[1].substr(7,splite[1].size() - 8));
+    // filename=""
+    ret->Setfilename(splite[2].substr(11,splite[2].size() - 12));
+
+    body += idx;
+    len -= idx;
+    idx = GetLine(body,len);
+    string data = string(body);
+    ret->SetContentType(data.substr(13,data.size() - 13));
+    
+    body += idx;
+    len -=idx;
+    ret->Setsize(len - 2);
+    ret->SetContent(body + 2,len - 2);
+    return ret;
+}
+std::vector<MultipartFile*> Request::FromFile(const std::string & name){
+    std::vector<MultipartFile*> ret;
+    if(ContentType.find("multipart/form-data",0) != ContentType.npos){
+        std::string prev = "multipart/form-data; boundary=";
+        auto ContentTypeLen = ContentType.size();
+        auto boundary = ContentType.substr(prev.size(),ContentTypeLen - prev.size());
+        // 1.取出所有的 Data分割数据起点 --boundary
+        vector<size_t> boundarys = GetBoundarys(bodys,ContentLength,boundary);
+        
+        for(int i = 0;i<boundarys.size() - 1;i++){
+           MultipartFile* file =  ReadAndCreateMultipartFile(bodys,boundarys[i],boundarys[i+1]);
+           ret.push_back(file);
+        }
+        return ret;
+    }
+
+    return ret;
+}
+
 HttpConn::HttpConn(TCPSocket socket,HttpEngine* engine):TCPSocket(socket),engine(engine),max_read_size(1024){
 }
+
 HttpConn::~HttpConn(){
     ReSetRequest();
     if(readbuf){
@@ -24,6 +115,13 @@ void HttpConn::InitConn(){
     router = "";
     _request.bodys = nullptr;
     _response.bodys = nullptr;
+    for(auto hashfile:m_files){
+        for(auto && file:hashfile.second){
+            delete file;
+            file =nullptr;
+        }
+    }
+    m_files.clear();
     ReSetRequest();
 }
 
@@ -88,6 +186,29 @@ std::string  HttpConn::StaticFileName(){
     return static_filename;
 }
 
+std::vector<MultipartFile*> HttpConn::PostFrom(const std::string &name){
+    if(!m_files.size()){
+        auto ret = _request.FromFile(name);
+        for(auto file:ret){
+            m_files[file->Getname()].push_back(file);
+        }
+    }
+    return m_files[name];
+}
+
+int HttpConn::SaveUploadFile(const MultipartFile* file,const std::string path){
+    int fd = open(path.c_str(),O_CREAT|O_RDWR|0666);
+    if(fd < 0){
+        perror("open:");
+        return fd;
+    }
+    // auto addr =  mmap(0,file->Getsize(),PROT_WRITE,MAP_PRIVATE,fd,0);
+    write(fd,file->GetContent(),file->Getsize());
+    // memcpy(addr,file->GetContent(),file->Getsize());
+    close(fd);
+    return 0;
+}
+
 int HttpConn::Write(){
     // _response ---> 
     cout<<"Write"<<endl;
@@ -129,7 +250,6 @@ int HttpConn::WriteToJson(HttpStatus_t code,string json){
     _response.status = code;
     _response.ContentLength = len;
     _response.bodys = new byte_t[len + 1]();
-    printf("malloc resp:%x\n",_response.bodys);
     bzero(_response.bodys,len + 1);
     memcpy(_response.bodys,json.c_str(),len + 1);
     return len + 1;
@@ -197,7 +317,7 @@ int HttpConn::WriteToFile(){
 
 HTTP_RESULT_t HttpConn::ReadToRequest(){
     auto ret = ReadDataToBuff();
-    // cout<<readbuf<<endl<<endl<<endl;
+    cout<<readbuf<<endl<<endl<<endl;
     if(ret != NO_REQUEST)
         return ret;
     ret = ParseRequest();
@@ -249,6 +369,7 @@ void HttpConn::BindJsonBody(JsonType* ret){
     ret->FromJson(j);
     return ;
 }
+
 string HttpConn::GetStaticFileName(){
     if(static_filename[0] != '/' && static_filename[0] != '\\'){
         return "./" + static_filename;
@@ -290,7 +411,6 @@ HTTP_RESULT_t HttpConn::ParseRequest(){
                 ret = ParseHeaderLine(text);
                 if(_request.ContentLength && !_request.bodys){
                     _request.bodys = new byte_t[_request.ContentLength + 1]();
-                    printf("malloc:%x\n",_request.bodys);
                     bzero(_request.bodys,_request.ContentLength + 1);
                 }
                 break;
@@ -495,9 +615,7 @@ void HttpConn::ReSetRequest(){
     req->cookies.clear();
     req->bodyLength = 0;
     if(req->bodys){
-        printf("release:%p",req->bodys);
         delete []req->bodys;
-        printf(" success\n");
         req->bodys = nullptr;
     }
      
@@ -508,9 +626,7 @@ void HttpConn::ReSetRequest(){
     resp->ContentType = "";
     resp->cookies.clear();
     if(resp->bodys){
-        printf("release resp:%p",resp->bodys);
         delete []resp->bodys;
-        printf(" success\n");
         resp->bodys = nullptr;
     }
 }

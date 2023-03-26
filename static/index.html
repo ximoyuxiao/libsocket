@@ -7,9 +7,10 @@
     <title>Document</title>
 </head>
 <body>
-    <h1>hello world</h1>
-    <h2>hello world</h2>
-    <h3>hello world</h3>
-    <h4>hello world</h4>
+	<form action="http://127.0.0.1:4490/api/upfile/" method="post" enctype="multipart/form-data">
+        选择一个文件:
+        <input type="file" name="file" multiple accept=".xml,.json">
+        <input type="submit" value="上传">
+    </form> 
 </body>
 </html>

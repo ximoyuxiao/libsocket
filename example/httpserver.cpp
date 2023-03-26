@@ -31,6 +31,16 @@ bool LoginReq::CheckLogin(){
 }
 
 void InitRouter(HttpEngine* engine){
+    engine->Post("/api/upfile/",[](HttpConn* conn){
+        auto files = conn->PostFrom("file");
+        Resp resp;
+        resp.Setcode(0);
+        resp.Setmsg("上传文件测试");
+        for(auto file:files){
+            int ret = conn->SaveUploadFile(file,"./file/" + file->Getfilename());
+        }
+        conn->WriteToJson(HttpStatus::StatusOK,&resp);
+    });
     engine->Post("/login",[](HttpConn* conn){
         LoginReq req;
         Resp resp;

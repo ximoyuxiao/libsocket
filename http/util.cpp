@@ -2,8 +2,11 @@
 #include <sstream>
 #include <iomanip>
 #include <string>
-#include<util.h>
-#include<cstdio>
+#include <util.h>
+#include <cstdio>
+#include <socktype.h>
+#include <cstring>
+#include <limits>
 namespace my{
 
 std::string toHex(unsigned char c) {
@@ -43,6 +46,23 @@ int SplitString(const std::string str,const std::string tag,std::vector<std::str
 
         return splite.size();
     }
+
+size_t FindBinary(const byte_t* src_data, const size_t offset, const size_t srcSize, const byte_t* des_data, size_t cmpsize) {
+    if (src_data == nullptr || des_data == nullptr || cmpsize > srcSize - offset) {
+        return std::numeric_limits<size_t>::max();// 返回错误标识
+    }
+
+    const byte_t* start = src_data + offset;
+    const byte_t* end = src_data + srcSize - cmpsize + 1;
+
+    for (const byte_t* p = start; p != end; ++p) {
+        if (std::memcmp(p, des_data, cmpsize) == 0) {
+            return p - src_data; // 找到了，返回下标
+        }
+    }
+
+    return std::numeric_limits<size_t>::max(); // 没有找到，返回错误标识
+}
 
 std::string URLdecode(std::string url){
     std::string result;

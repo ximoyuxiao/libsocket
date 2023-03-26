@@ -1,6 +1,6 @@
 CC=g++
 SOKCETOBJ=src/baseio.o src/socket.o src/tcpsocket.o src/epoll.o\
-http/http.o http/util.o http/httpcoon.o http/httpengine.o\
+http/http.o http/util.o http/httpcoon.o http/httpengine.o http/httpfile.o\
 Tpool/cond.o Tpool/locker.o Tpool/sem.o Tpool/threadpool.o
 TARGETDIR=./build
 CXXFLAGS = -fPIC -I./include -std=c++11 -g

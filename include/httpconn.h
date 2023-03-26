@@ -6,6 +6,8 @@
 #include <http.h>
 #include <httpengine.h>
 #include <resptype.h>
+#include <httpfile.h>
+#include <vector>
 namespace my{
 typedef unordered_map<std::string,std::string> HTTPHeader_t;
 typedef unordered_map<std::string,std::string> HTTPCookie_t;
@@ -26,6 +28,7 @@ struct Request{
     string ContentType;
     HTTPCookie_t cookies;
     Body*   bodys;
+    std::vector<MultipartFile*> FromFile(const std::string & name);
 };
 
 struct Response{
@@ -50,23 +53,17 @@ class HttpConn:public TCPSocket{
     vector<byte_t> writebuf;
     string router;
 
+    HTTP_CHECK_STATE_t check_status;
+    HTTP_LINE_STATUS_t line_status;
+    HTTP_RESULT_t http_result;
+    
     string static_filename;
     int file_fd;
     bool   file_req;
     byte_t* address;
     size_t  file_size;
-public:
-    bool KeepAlive();
-    bool FileReq();
-    void FileReq(bool isFileReq);
-    size_t StaticFileSize();
-    void   StaticFileSize(size_t filesize = 0);
-    void StaticFileFD(int fd);
-    int StaticFileFD();
-    byte_t* Address();
-    void Address(byte_t*);
-    void StaticFileName(string filename);
-    std::string StaticFileName(void);
+    
+    MultipartFiles m_files;
 private:
     HttpConn(const HttpConn&) = delete;
     HttpConn& operator=(const HttpConn&)=delete;
@@ -82,9 +79,20 @@ public:
     string Router();
     void Router(string router);
 public:
-    HTTP_CHECK_STATE_t check_status;
-    HTTP_LINE_STATUS_t line_status;
-    HTTP_RESULT_t http_result;
+    bool KeepAlive();
+    bool FileReq();
+    void FileReq(bool isFileReq);
+    size_t StaticFileSize();
+    void   StaticFileSize(size_t filesize = 0);
+    void StaticFileFD(int fd);
+    int StaticFileFD();
+    byte_t* Address();
+    void Address(byte_t*);
+    void StaticFileName(string filename);
+    std::string StaticFileName(void);
+    std::vector<MultipartFile*> PostFrom(const std::string &key);
+    int SaveUploadFile(const MultipartFile* file,const std::string path);
+public:
     int Write();
     // 解析出来的路由
     int WriteToJson(HttpStatus_t code,string json);
@@ -120,18 +128,6 @@ private:
     HTTP_RESULT_t ParseContentLine(const char* text);
     void ParseCookie(string value);
     void RequestToWriteBuff();
-private:
-//下面这些不需要在实现 但是需要影藏
-    // virtual int ReadBytes(byte_t *buff,size_t size);
-    // virtual int WriteBytes(const byte_t* buff,size_t size);
-    // virtual int ReadString(char* buf,size_t max_size);
-    // virtual int WriteString(const char* buf,size_t max_size);
-    // virtual int32_t ReadInt32();
-    // virtual int WriteInt32(int32_t buf);
-    // virtual int64_t ReadInt64();
-    // virtual int WriteInt64(int64_t buf);
-    // virtual int ReadObj(void* buff,size_t size);
-    // virtual int WriteObj(void* buff,size_t size);
 }; 
 };
 #endif
