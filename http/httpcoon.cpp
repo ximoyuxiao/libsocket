@@ -244,10 +244,24 @@ int HttpConn::Write(){
         perror("WriteBytes");
         return ret;
     }
+        // sendFILE 的一个大坑 传输文件较大的情况下 不一定能传全 想办法fix
     if(file_req && fd >= 0){
-        ret = sendfile(FD(),file_fd,0,file_size);
-        if(ret == -1){
-            perror("SendFile");
+        size_t write_size = 0;
+        off_t offset = 0;
+        while(file_size > 0){
+            write_size = sendfile(FD(),file_fd,&offset,file_size);
+            if(ret == -1){
+                if(errno == EINTR){
+                    continue;
+                }
+                perror("SendFile");
+                break;
+            }
+            if(write_size == 0){
+                break;
+            }
+            ret += write_size;
+            file_size -= write_size;
         }
     }
     return ret;
@@ -403,7 +417,7 @@ HTTP_RESULT_t HttpConn::ReadDataToBuff(){
     read_idx += len;
     return NO_REQUEST;
 }
-
+// 状态机
 HTTP_RESULT_t HttpConn::ParseRequest(){
     line_status = LINE_OK;
     HTTP_RESULT_t ret = NO_REQUEST;
